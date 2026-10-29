@@ -1,0 +1,10 @@
+/target/
+/.tooling/
+/dist/
+/.build/
+**/.build/
+**/.swiftpm/
+/.local/
+*.DS_Store
+/premium-audit.json
+

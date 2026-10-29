@@ -57,6 +57,7 @@ iOS 未签名 IPA **不能直接安装**，模拟器包需匹配模拟器架构�
 | --- | --- |
 | [功能与实现状态](docs/project-status.md) | 各端实现清单、扫码流程、当前限制、源码结构和后续计划 |
 | [构建与调试](docs/development.md) | Android Studio 打开方式、各平台工具链、构建与验证命令 |
+| [Android 发布签名](docs/signing-android.md) / [Apple 与 Windows 签名](docs/signing-platforms.md) | 本地密钥、签名构建、证书要求与产物验证 |
 | [CLI 使用](docs/cli.md) | 命令行收发、确认与断点续传 |
 | [传输协议](docs/protocol-v1.md) / [原生桥接](docs/native-bridge.md) | HTTPS 协议、恢复规则与 C ABI / JNI 接口 |
 | [验证记录](docs/verification.md) | CI 证据、已修复问题与待完成的真机验收 |

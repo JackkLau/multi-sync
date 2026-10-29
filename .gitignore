@@ -21,3 +21,13 @@ apps/ios/Native/
 **/.gradle-local/
 apps/ios/*.xcodeproj/
 
+# Local signing keys and credentials must never enter source control.
+/.signing/
+**/keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.mobileprovision
+**/ExportOptions.local.plist
+

@@ -14,6 +14,8 @@ sh scripts/build-android.sh
 
 APK：`apps/android/app/build/outputs/apk/debug/app-debug.apk`。包含 arm64-v8a 真机及 x86_64 模拟器库。此 APK 使用 debug 签名。
 
+发布签名使用独立密钥；Android Studio 的 **Build → Generate Signed Bundle / APK** 流程和命令行构建见[Android 发布签名](../../docs/signing-android.md)。不要将 Debug APK 重新命名为发布包。
+
 在 Android Studio 中打开 **apps/android**，等待 Gradle Sync。先运行上述脚本生成 JNI 库，再选择 app / debug、连接开启 USB 调试的手机，点击 Debug。Kotlin 层可直接设置断点；脚本同时保留 Rust 符号且 APK 不剥离 JNI 符号，Rust 调试需在 Android Studio 配置 LLDB，优化代码可能存在行号跳转。
 
 ## 操作

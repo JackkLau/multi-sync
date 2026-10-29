@@ -1,0 +1,64 @@
+name: MultiSyncIOS
+options:
+  bundleIdPrefix: local.multisync
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_OBJC_BRIDGING_HEADER: Bridge/MultiSyncBridge.h
+    LIBRARY_SEARCH_PATHS:
+      - "$(inherited)"
+      - "$(PROJECT_DIR)/Native/$(PLATFORM_NAME)"
+    OTHER_LDFLAGS:
+      - "$(inherited)"
+      - "-lmulti_sync_bridge"
+      - "-lc++"
+      - "-lz"
+      - "-liconv"
+      - "-framework"
+      - "Security"
+      - "-framework"
+      - "SystemConfiguration"
+    ENABLE_BITCODE: NO
+targets:
+  MultiSync:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - path: ../macos/Sources/MultiSyncKit/Models.swift
+      - path: ../macos/Sources/MultiSyncKit/InvitationQRCode.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.multisync.mobile
+        PRODUCT_NAME: MultiSync
+        INFOPLIST_FILE: Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+  MultiSyncTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: MultiSync
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.multisync.mobile.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/MultiSync.app/MultiSync"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  MultiSync:
+    build:
+      targets:
+        MultiSync: all
+    test:
+      targets:
+        - MultiSyncTests
+      gatherCoverageData: true

@@ -1,6 +1,6 @@
 {
   "profile": "product-admin",
-  "sourceRoots": ["apps/macos/Sources"],
+  "sourceRoots": ["apps/macos/Sources", "apps/ios/Sources", "apps/android/app/src/main/java", "apps/windows"],
   "locale": "zh-CN",
   "canonicalMap": "UX-CONTRACT.md",
   "requiredCapabilities": ["Form", "Scrollbar", "Toast"],

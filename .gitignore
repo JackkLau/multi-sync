@@ -17,5 +17,7 @@ __pycache__/
 **/obj/
 apps/android/app/src/main/jniLibs/
 apps/ios/Vendor/
+apps/ios/Native/
+**/.gradle-local/
 apps/ios/*.xcodeproj/
 

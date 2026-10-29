@@ -4,6 +4,7 @@ import org.json.JSONObject
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Base64
+import java.util.Locale
 
 object TicketRules {
     fun host(ticket: String): String {
@@ -41,12 +42,29 @@ fun localAddresses(): List<String> = runCatching {
 }.getOrDefault(emptyList())
 
 object SafeNames {
+    private const val MAX_UTF8_BYTES = 180 // Shared core validate_name contract, including extension.
+
+    private fun fit(value: String, bytes: Int): String {
+        var result = value
+        while (result.toByteArray(Charsets.UTF_8).size > bytes) {
+            result = result.substring(0, result.offsetByCodePoints(result.length, -1))
+        }
+        return result
+    }
+
     fun file(value: String): String {
-        var result = value.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").trim().trimEnd('.')
+        var result = value.replace(Regex("[\\\\/:*?\"<>|\\p{Cc}]"), "_").trim().trimEnd('.', ' ')
         if (result.isBlank()) result = "file"
-        val stem = result.substringBefore('.').uppercase()
-        if (stem in setOf("CON", "PRN", "AUX", "NUL") || stem.matches(Regex("(COM|LPT)[1-9¹²³]")) || result == ".multisync") result = "file_$result"
-        while (result.toByteArray(Charsets.UTF_8).size > 220) result = result.substring(0, result.offsetByCodePoints(result.length, -1))
+        val stem = result.substringBefore('.').trimEnd(' ').uppercase(Locale.ROOT)
+        if (stem in setOf("CON", "PRN", "AUX", "NUL") || stem.matches(Regex("(COM|LPT)[1-9¹²³]")) || result.equals(".multisync", ignoreCase = true)) result = "file_$result"
+        if (result.toByteArray(Charsets.UTF_8).size > MAX_UTF8_BYTES) {
+            val dot = result.lastIndexOf('.')
+            val extension = if (dot > 0) result.substring(dot) else ""
+            val extensionBytes = extension.toByteArray(Charsets.UTF_8).size
+            result = if (extension.isNotEmpty() && extensionBytes < MAX_UTF8_BYTES) {
+                fit(result.substring(0, dot), MAX_UTF8_BYTES - extensionBytes).ifEmpty { "f" } + extension
+            } else fit(result, MAX_UTF8_BYTES)
+        }
         return result.trimEnd('.', ' ')
     }
 }

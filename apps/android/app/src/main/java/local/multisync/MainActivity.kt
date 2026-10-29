@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.PersistableBundle
+import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -39,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 
 class ScannerActivity : CaptureActivity()
 
@@ -79,8 +81,10 @@ private fun MultiSyncScreen(model: TransferModel = viewModel()) {
                 .setOrientationLocked(false).setCaptureActivity(ScannerActivity::class.java).setPrompt("扫描对方的 MultiSync 接收二维码"))
         }) { Text("开启摄像头") } }, dismissButton = { TextButton(onClick = { cameraExplanation = false }) { Text("取消") } })
 
-    fun share(file: File, mime: String, open: Boolean = false) {
+    fun share(file: File, open: Boolean = false) {
         runCatching {
+            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase(Locale.ROOT))
+                ?: "application/octet-stream"
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
             val intent = if (open) Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime) else
                 Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
@@ -102,7 +106,7 @@ private fun MultiSyncScreen(model: TransferModel = viewModel()) {
                     finally { image.recycle() }
                     file
                 }
-                share(file, "image/png")
+                share(file)
             }.onFailure { model.notice(it.message ?: "无法生成二维码图片") }
         }
     }
@@ -203,8 +207,8 @@ private fun MultiSyncScreen(model: TransferModel = viewModel()) {
                                 if (task.state == "receiving") TextButton(onClick = { model.decide(task.id, false) }) { Text("停止并拒绝") }
                                 if (task.state == "completed") {
                                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        TextButton(onClick = { model.completedFile(task)?.let { share(it, "application/octet-stream", true) } ?: model.notice("文件已被移动或无法读取") }) { Text("打开") }
-                                        TextButton(onClick = { model.completedFile(task)?.let { share(it, "application/octet-stream") } ?: model.notice("文件已被移动或无法读取") }) { Text("分享") }
+                                        TextButton(onClick = { model.completedFile(task)?.let { share(it, open = true) } ?: model.notice("文件已被移动或无法读取") }) { Text("打开") }
+                                        TextButton(onClick = { model.completedFile(task)?.let { share(it) } ?: model.notice("文件已被移动或无法读取") }) { Text("分享") }
                                         TextButton(onClick = { exportTask = task; export.launch(task.finalName ?: task.name) }) { Text("另存为") }
                                     }
                                 }

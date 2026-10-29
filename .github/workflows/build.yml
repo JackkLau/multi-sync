@@ -32,6 +32,14 @@ jobs:
         run: cargo +stable test --workspace --release
       - name: Build CLI
         run: cargo +stable build --release -p multi-sync -p multi-sync-bridge
+      - name: Record resolved dependency lock
+        if: runner.os == 'Linux'
+        run: |
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          print('MULTISYNC_LOCK=' + base64.b64encode(Path('Cargo.lock').read_bytes()).decode())
+          PY
       - name: Native C ABI integration (Linux)
         if: runner.os == 'Linux'
         env:

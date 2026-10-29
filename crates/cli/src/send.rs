@@ -1,4 +1,4 @@
-use crate::{emit, identity::{private_write, Ticket}};
+use crate::{EventSink, identity::{private_write, Ticket}};
 use anyhow::{bail, ensure, Context, Result};
 use multi_sync_core::{hash_bytes, hash_file, private_dir, Manifest, Transfer, CHUNK_SIZE};
 use serde::{Deserialize, Serialize};
@@ -8,6 +8,11 @@ use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 struct Journal { version: u8, source: PathBuf, ticket: String, manifest: Manifest }
+
+async fn digest(path: PathBuf) -> Result<String> {
+    // Hashing can take seconds. Keep the runtime responsive to pause/background signals.
+    tokio::task::spawn_blocking(move || hash_file(&path)).await?
+}
 
 async fn response(response: reqwest::Response) -> Result<Transfer> {
     let status = response.status();
@@ -25,7 +30,7 @@ fn check_response(job: &Transfer, manifest: &Manifest) -> Result<()> {
     Ok(())
 }
 
-pub async fn send(source: Option<PathBuf>, journal_path: PathBuf) -> Result<()> {
+pub async fn send(source: Option<PathBuf>, journal_path: PathBuf, invitation: Option<String>, emit: EventSink) -> Result<()> {
     let journal: Journal = if journal_path.exists() {
         serde_json::from_slice(&fs::read(&journal_path)?)?
     } else {
@@ -33,12 +38,11 @@ pub async fn send(source: Option<PathBuf>, journal_path: PathBuf) -> Result<()> 
         ensure!(source.is_file(), "首版仅发送普通文件，文件夹支持尚未实现");
         let name = source.file_name().and_then(|s| s.to_str()).context("文件名不是有效 UTF-8")?.to_owned();
         multi_sync_core::validate_name(&name)?;
-        let mut input = String::new();
-        std::io::stdin().take(16385).read_to_string(&mut input)?;
+        let input = invitation.context("首次发送需要扫描或提供接收码")?;
         let ticket = Ticket::decode(input.trim())?;
         emit(json!({"event":"hashing", "name":name}));
         let before = source.metadata()?;
-        let digest = hash_file(&source)?;
+        let digest = digest(source.clone()).await?;
         let after = source.metadata()?;
         ensure!(before.len() == after.len() && before.modified()? == after.modified()?, "源文件正在变化，请等写入完成后重试");
         let manifest = Manifest { id: Uuid::new_v4(), name, size: after.len(), sha256:digest };
@@ -55,7 +59,7 @@ pub async fn send(source: Option<PathBuf>, journal_path: PathBuf) -> Result<()> 
     let m = &journal.manifest;
     emit(json!({"event":"hashing", "id":m.id, "name":m.name}));
     let source_meta = journal.source.metadata()?;
-    ensure!(source_meta.is_file() && source_meta.len() == m.size && hash_file(&journal.source)? == m.sha256, "源文件已变化或无法读取；请重新选择文件建立任务");
+    ensure!(source_meta.is_file() && source_meta.len() == m.size && digest(journal.source.clone()).await? == m.sha256, "源文件已变化或无法读取；请重新选择文件建立任务");
     let ticket = Ticket::decode(&journal.ticket)?;
     let client = ticket.client()?;
     let path = format!("/v1/transfers/{}", m.id);

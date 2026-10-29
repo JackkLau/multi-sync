@@ -110,6 +110,30 @@ final class AppModel: ObservableObject {
         notice = "接收邀请已复制。仅分享给你要接收文件的设备；每份文件仍需你确认。"
     }
 
+    func pasteTicket() {
+        guard let value = NSPasteboard.general.string(forType: .string) else {
+            notice = "剪贴板中没有接收码，请扫描对方的二维码。"; return
+        }
+        acceptScannedInvitation(value)
+    }
+
+    func copyQRCode() {
+        guard let code = receivingQRCode else { return }
+        let image = NSImage(cgImage: code, size: NSSize(width: code.width, height: code.height))
+        NSPasteboard.general.clearContents()
+        if NSPasteboard.general.writeObjects([image]) { notice = "接收二维码已复制，可直接分享图片。" }
+        else { notice = "无法复制二维码，请使用保存二维码。" }
+    }
+
+    func saveQRCode() {
+        guard let code = receivingQRCode,
+              let data = NSBitmapImageRep(cgImage: code).representation(using: .png, properties: [:]) else { return }
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "MultiSync-接收码.png"; panel.allowedContentTypes = [.png]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try data.write(to: url, options: .atomic); notice = "接收二维码已保存，可直接分享给发送设备。" }
+        catch { notice = "二维码保存失败：\(error.localizedDescription)" }
+    }
+
     func acceptScannedInvitation(_ value: String) {
         guard Invitation.isPlausible(value) else {
             notice = "二维码不是有效的 MultiSync 接收邀请，请重新扫描。"
@@ -162,7 +186,7 @@ final class AppModel: ObservableObject {
 
     func sendSelected() {
         guard canSave, engine != nil, !files.isEmpty else { return }
-        guard Invitation.isPlausible(invitation) else { notice = "接收邀请无效。请在对方设备开启接收后复制完整邀请。"; return }
+        guard Invitation.isPlausible(invitation) else { notice = "请先扫描对方设备的接收二维码，也可从剪贴板导入接收码。"; return }
         do {
             var additions: [SendRecord] = []
             for file in files {
@@ -187,7 +211,7 @@ final class AppModel: ObservableObject {
         let journal = dataRoot.appendingPathComponent("outgoing/\(id.uuidString).json")
         let exists = FileManager.default.fileExists(atPath: journal.path)
         let ticket = invitations[id] ?? invitation.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard exists || Invitation.isPlausible(ticket) else { notice = "此任务尚未建立连接。请先粘贴接收邀请，再点击继续。"; return }
+        guard exists || Invitation.isPlausible(ticket) else { notice = "此任务尚未建立连接。请先扫码连接接收设备，再点击继续。"; return }
         var args = ["send", "--journal", journal.path]
         if !exists { args += ["--source", record.source] }
         outgoing[index].phase = .hashing; outgoing[index].message = nil

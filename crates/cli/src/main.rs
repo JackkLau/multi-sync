@@ -1,12 +1,9 @@
-mod identity;
-mod server;
-mod send;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use multi_sync_core::Store;
 use serde_json::{json, Value};
-use std::{io::Write, net::{Ipv4Addr, SocketAddr}, path::PathBuf};
+use std::{io::{Read, Write}, net::{Ipv4Addr, SocketAddr}, path::PathBuf, sync::Arc};
+use multi_sync::{send, server};
 use uuid::Uuid;
 
 #[derive(Parser)]
@@ -33,7 +30,7 @@ pub fn emit(value: Value) {
 
 #[tokio::main]
 async fn main() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    multi_sync::initialize_crypto();
     if let Err(error) = run(Args::parse()).await {
         emit(json!({"event":"error", "message":format!("{error:#}")}));
         std::process::exit(1);
@@ -41,8 +38,26 @@ async fn main() {
 }
 async fn run(args: Args) -> Result<()> {
     match args.command {
-        Command::Receive { inbox, bind, advertise } => server::serve(inbox, bind, advertise).await?,
-        Command::Send { source, journal } => send::send(source, journal).await?,
+        Command::Receive { inbox, bind, advertise } => {
+            let (stop, stopped) = tokio::sync::watch::channel(false);
+            tokio::spawn(async move {
+                #[cfg(unix)] {
+                    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("signal handler");
+                    tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = term.recv() => {} }
+                }
+                #[cfg(not(unix))] { let _ = tokio::signal::ctrl_c().await; }
+                let _ = stop.send(true);
+            });
+            server::serve(inbox, bind, advertise, Arc::new(emit), stopped).await?;
+        },
+        Command::Send { source, journal } => {
+            let ticket = if journal.exists() { None } else {
+                let mut input = String::new();
+                std::io::stdin().take(16385).read_to_string(&mut input)?;
+                Some(input)
+            };
+            send::send(source, journal, ticket, Arc::new(emit)).await?;
+        },
         Command::Jobs { inbox } => emit(json!({"event":"jobs", "jobs":Store::open(&inbox)?.list()?})),
         Command::Approve { inbox, id } => emit(json!({"event":"job", "job":Store::open(&inbox)?.approve(id)?})),
         Command::Reject { inbox, id } => emit(json!({"event":"job", "job":Store::open(&inbox)?.reject(id)?})),

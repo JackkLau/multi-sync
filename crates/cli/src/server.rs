@@ -1,4 +1,4 @@
-use crate::{emit, identity::{local_address, Identity}};
+use crate::{EventSink, identity::{local_address, Identity}};
 use anyhow::{ensure, Result};
 use axum::{body::Bytes, extract::{DefaultBodyLimit, Path, Query, State}, http::{HeaderMap, StatusCode}, response::{IntoResponse, Response}, routing::{get, post, put}, Json, Router};
 use multi_sync_core::{Store, Transfer, Manifest, CHUNK_SIZE};
@@ -49,7 +49,7 @@ async fn complete(State(state): State<AppState>, Path(id): Path<Uuid>, headers: 
     execute(state, move |store| store.complete(id)).await
 }
 
-pub async fn serve(inbox: PathBuf, bind: SocketAddr, advertise: Ipv4Addr) -> Result<()> {
+pub async fn serve(inbox: PathBuf, bind: SocketAddr, advertise: Ipv4Addr, emit: EventSink, mut stopped: tokio::sync::watch::Receiver<bool>) -> Result<()> {
     ensure!(local_address(advertise), "公布地址必须是局域网 IPv4 地址");
     ensure!(bind.is_ipv4() && (bind.ip().is_unspecified() || match bind.ip() { std::net::IpAddr::V4(ip) => local_address(ip), _ => false }), "监听地址无效");
     let store = Store::open(&inbox)?;
@@ -71,15 +71,15 @@ pub async fn serve(inbox: PathBuf, bind: SocketAddr, advertise: Ipv4Addr) -> Res
     emit(json!({"event":"ready", "ticket": identity.ticket(advertise, port)?, "address":format!("{advertise}:{port}"), "fingerprint":identity.fingerprint()?, "inbox":inbox}));
     let handle = axum_server::Handle::new();
     let shutdown = handle.clone();
-    tokio::spawn(async move {
-        #[cfg(unix)] {
-            let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("signal handler");
-            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = term.recv() => {} }
+    let shutdown_task = tokio::spawn(async move {
+        while !*stopped.borrow() {
+            if stopped.changed().await.is_err() { break; }
         }
-        #[cfg(not(unix))] { let _ = tokio::signal::ctrl_c().await; }
         shutdown.graceful_shutdown(Some(std::time::Duration::from_secs(3)));
     });
-    axum_server::from_tcp_rustls(listener, config)?.handle(handle).serve(app.into_make_service()).await?;
+    let result = axum_server::from_tcp_rustls(listener, config)?.handle(handle).serve(app.into_make_service()).await;
+    shutdown_task.abort();
+    result?;
     drop(lock);
     Ok(())
 }

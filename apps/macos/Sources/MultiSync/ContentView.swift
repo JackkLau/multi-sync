@@ -98,17 +98,18 @@ struct ContentView: View {
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 9) {
-                    Text("对方的接收邀请").font(.headline)
+                    Text("连接接收设备").font(.headline)
                     HStack(spacing: 12) {
                         Button { model.showingScanner = true } label: { Label("扫码识别", systemImage: "qrcode.viewfinder") }
                             .disabled(model.readingQRCode)
                         Button("从二维码图片识别…", action: model.selectQRCodeImage).disabled(model.readingQRCode)
+                        Button("从剪贴板导入", action: model.pasteTicket).disabled(model.readingQRCode)
                         if model.readingQRCode { ProgressView().controlSize(.small).accessibilityLabel("正在识别二维码") }
                     }
                     HStack {
                         Group {
                             if model.revealInvitation { TextField("msync1:…", text: $model.invitation) }
-                            else { SecureField("扫码自动填入，也可粘贴接收邀请", text: $model.invitation) }
+                            else { SecureField("扫码后自动连接，无需手动填写", text: $model.invitation) }
                         }.textFieldStyle(.roundedBorder).accessibilityLabel("对方的接收邀请")
                         Button { model.revealInvitation.toggle() } label: { Image(systemName: model.revealInvitation ? "eye.slash" : "eye") }
                             .help(model.revealInvitation ? "隐藏邀请" : "显示邀请").accessibilityLabel(model.revealInvitation ? "隐藏邀请" : "显示邀请")
@@ -171,7 +172,7 @@ struct ContentView: View {
                 }
                 if model.localAddress.hasPrefix("127.") { Text("当前是本机测试地址。跨设备传输时，请填写电脑的 Wi-Fi 或有线网络地址。") .font(.caption).foregroundStyle(Theme.muted) }
                 HStack {
-                    Label(model.receiverRunning ? (model.receivingTicket.isEmpty ? "正在启动接收…" : "接收已开启 · \(model.receivingAddress)") : "开启后，其他设备才能发送邀请", systemImage: "network")
+                    Label(model.receiverRunning ? (model.receivingTicket.isEmpty ? "正在启动接收…" : "接收已开启 · \(model.receivingAddress)") : "开启接收后自动生成本机二维码，无需输入接收码", systemImage: "network")
                         .font(.callout).foregroundStyle(Theme.muted)
                     Spacer()
                     if model.receiverRunning { Button("停止接收", action: model.stopReceiving) }
@@ -187,14 +188,19 @@ struct ContentView: View {
                                 .frame(width: 300, height: 300)
                                 .frame(maxWidth: .infinity)
                                 .accessibilityLabel("MultiSync 接收二维码，包含本机连接凭据")
+                            ShareLink(item: Image(decorative: code, scale: 1),
+                                      preview: SharePreview("MultiSync 接收二维码", image: Image(decorative: code, scale: 1))) {
+                                Label("分享二维码", systemImage: "square.and.arrow.up")
+                            }
                         }
                         Text("在发送设备的 MultiSync 中点击“扫码识别”。二维码包含接收密钥，请只展示给要连接的设备。")
                             .font(.callout).foregroundStyle(Theme.muted)
                         HStack {
-                            Label("扫码后仍需你确认每份文件", systemImage: "checkmark.shield").font(.caption).foregroundStyle(Theme.muted)
-                            Spacer()
-                            Button("复制接收邀请", action: model.copyTicket)
+                            Button("复制接收码", action: model.copyTicket)
+                            Button("复制二维码", action: model.copyQRCode)
+                            Button("保存二维码…", action: model.saveQRCode)
                         }
+                        Label("扫码后仍需你确认每份文件", systemImage: "checkmark.shield").font(.caption).foregroundStyle(Theme.muted)
                     }
                 }
             }

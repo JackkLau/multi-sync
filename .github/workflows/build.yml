@@ -116,6 +116,17 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
           sh scripts/build-android.sh
+      - name: Build release APK for local Android Studio signing
+        working-directory: apps/android
+        run: |
+          sh ./gradlew --no-daemon -Pmultisync.unsignedRelease=true testReleaseUnitTest assembleRelease
+          mkdir -p ../../dist/android-unsigned
+          cp app/build/outputs/apk/release/app-release-unsigned.apk ../../dist/android-unsigned/
+          printf '%s\n' "$GITHUB_SHA" > ../../dist/android-unsigned/SOURCE_COMMIT.txt
+          cd ../../dist/android-unsigned
+          sha256sum app-release-unsigned.apk > SHA256SUMS
+      - name: Verify release signing with a disposable test key
+        run: sh scripts/test-android-release-signing.sh
       - name: Verify packaged native engines
         run: |
           python3 - <<'PY'
@@ -171,6 +182,11 @@ jobs:
             apps/android/app/build/reports/tests/testDebugUnitTest/
             apps/android/app/build/reports/androidTests/connected/
             Cargo.lock
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MultiSync-Android-release-unsigned
+          path: dist/android-unsigned/
           if-no-files-found: error
 
   ios:

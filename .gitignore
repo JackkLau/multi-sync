@@ -9,4 +9,13 @@
 /premium-audit.json
 __pycache__/
 *.pyc
+.idea/
+**/.gradle/
+**/build/
+**/local.properties
+**/bin/
+**/obj/
+apps/android/app/src/main/jniLibs/
+apps/ios/Vendor/
+apps/ios/*.xcodeproj/
 

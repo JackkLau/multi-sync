@@ -31,7 +31,17 @@ jobs:
       - name: Core and CLI tests
         run: cargo +stable test --workspace --release
       - name: Build CLI
-        run: cargo +stable build --release -p multi-sync
+        run: cargo +stable build --release -p multi-sync -p multi-sync-bridge
+      - name: Native C ABI integration (Linux)
+        if: runner.os == 'Linux'
+        env:
+          MULTISYNC_LIBRARY: target/release/libmulti_sync_bridge.so
+        run: python3 tests/bridge_e2e.py
+      - name: Native C ABI integration (Windows)
+        if: runner.os == 'Windows'
+        env:
+          MULTISYNC_LIBRARY: target/release/multi_sync_bridge.dll
+        run: python3 tests/bridge_e2e.py
       - name: Real HTTPS integration tests
         if: runner.os == 'Linux'
         env:
@@ -62,6 +72,12 @@ jobs:
         run: sh scripts/swift.sh test
       - name: Build complete native application
         run: sh scripts/build-macos.sh
+      - name: Native C ABI integration
+        env:
+          MULTISYNC_LIBRARY: target/release/libmulti_sync_bridge.dylib
+        run: |
+          cargo +stable build --release -p multi-sync-bridge
+          python3 tests/bridge_e2e.py
       - name: Real HTTPS integration tests
         env:
           MULTISYNC_BIN: ${{ github.workspace }}/target/release/multi-sync

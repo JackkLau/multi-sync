@@ -1,6 +1,6 @@
 # 验证记录
 
-日期：2026-10-29（Asia/Hong_Kong）。范围为四类操作系统的原生局域网文件收发客户端、共享引擎和二维码连接。构建/回环测试与物理设备验收分别记录。
+日期：2026-10-29～30（Asia/Hong_Kong）。范围为四类操作系统的原生局域网文件收发客户端、共享引擎和二维码连接。构建/回环测试与物理设备验收分别记录。
 
 客户端主实现已合并：[PR #2](https://github.com/JackkLau/multi-sync/pull/2)。后续平台兼容修复的完整结果见 [Actions](https://github.com/JackkLau/multi-sync/actions)。各项证据均标明对应运行，不能用旧提交的绿灯替代新提交结果。
 
@@ -13,9 +13,9 @@
 | 不自动接收陌生请求 | 新任务 pending，确认前不能上传字节 | Python HTTPS、C ABI、移动端仪器测试 | 桌面共享引擎通过 |
 | 中断与重启不丢任务 | 保存 journal/SQLite；暂停后从已确认位置恢复 | bridge_e2e.py、lan_e2e.py | 三类桌面 runner 的 C ABI 通过 |
 | 内容与原件保留 | 原文件不删除，内容一致，同名不覆盖，恢复不重复 | 真实 TLS 传输后的字节比较 | 桌面共享引擎通过 |
-| Android 可用构建 | APK 包含两种 ABI；模拟器真实 JNI TLS 收发 | GitHub Android 构建与 BridgeSmokeTest | run 40905153482：APK/单元测试通过，仪器测试暴露硬链接限制；修复后以最新 CI 为准 |
-| iPhone/iPad 可用构建 | 真机/模拟器链接真实 Rust 库，模拟器执行 HTTPS 测试 | scripts/build-ios.sh --test | run 40905153482：5 个测试通过、产物上传 |
-| Windows 完整应用 | 自包含 WinUI exe + Rust DLL，队列模型测试 | scripts/build-windows.ps1 | run 40905153482 通过并上传自包含 ZIP |
+| Android 可用构建 | APK 包含两种 ABI；模拟器真实 JNI TLS 收发 | GitHub Android 构建与 BridgeSmokeTest | run 40908569718：APK/单元测试与 1 个真实 JNI 测试通过；日志脚本收尾出错已修复，完整流水线见最新 CI |
+| iPhone/iPad 可用构建 | 真机/模拟器链接真实 Rust 库，模拟器执行 HTTPS 测试 | scripts/build-ios.sh --test | run 40908569718：5 个测试通过、产物上传 |
+| Windows 完整应用 | 自包含 WinUI exe + Rust DLL，队列模型测试 | scripts/build-windows.ps1 | run 40908569718 通过并上传自包含 ZIP |
 | 移动端后台边界 | 后台暂停，手动恢复，停机完成前不可重开 | 生命周期与停止状态源码检查 | 已检查；锁屏/强退/物理设备待验收 |
 
 ## 已完成的共享引擎与 macOS 验证
@@ -26,6 +26,8 @@
 - 三个平台均加载真实共享库执行 C ABI HTTPS 集成测试，覆盖显式接受、暂停/停止/恢复、2 MiB 文件内容、保留源文件、同名文件保护、完成后的幂等恢复和无效请求。
 - Linux、macOS 的真实 CLI HTTPS 集成测试通过，覆盖鉴权、证书、路径限制和重启恢复。
 - macOS Swift 测试（含完整邀请二维码回读）、完整应用构建、签名检查、ZIP 打包及上传通过。
+
+原子提交修复提交 `3aee29726946e9c27fc8040c702c85cd3a68af3d` 的 [run 40908569718](https://github.com/JackkLau/multi-sync/actions/runs/40908569718) 中，Linux/Windows/macOS 的工作区、C ABI、CLI 集成和原生应用检查通过；iOS 5 个测试通过，Android APK、JVM 单元测试和真实 JNI 仪器测试通过。Android job 仅在成功测试后的日志脚本退出码处失败，收尾修复见下文。
 
 ## 本地检查
 
@@ -45,6 +47,8 @@
 先前 macOS 原生窗口检查已完成：图片选择器导入 QR 后自动识别、没有自动发送；扫码窗口初始不启用相机；缺少引擎时禁用收发。物理摄像头对屏扫码尚未验收。
 
 ## 修复记录
+
+- run 40908569718 的 Android 真实收发测试已成功，但 emulator action 将多行 script 分别启动 shell，导致日志收集后的退出码变量丢失。改为独立 test-android.sh 单进程脚本；本地验证测试退出码 0/37 与日志退出码 0/13 的四种组合，均保留真实测试结果。
 
 - Android 模拟器实际启动接收报 Permission denied。AOSP Android 15 的 SELinux app_neverallows.te 禁止普通应用创建硬链接；身份保存和最终文件提交改用 Linux/Android 的原子不覆盖移动，并补上移动完成但 SQLite 未确认时的恢复校验。参见 [AOSP 官方策略](https://android.googlesource.com/platform/system/sepolicy/+/refs/heads/android15-release/private/app_neverallows.te)。
 

@@ -29,17 +29,9 @@ jobs:
       - name: Event reader regression test
         run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Core and CLI tests
-        run: cargo +stable test --workspace --release
+        run: cargo +stable test --locked --workspace --release
       - name: Build CLI
-        run: cargo +stable build --release -p multi-sync -p multi-sync-bridge
-      - name: Record resolved dependency lock
-        if: runner.os == 'Linux'
-        run: |
-          python3 - <<'PY'
-          import base64
-          from pathlib import Path
-          print('MULTISYNC_LOCK=' + base64.b64encode(Path('Cargo.lock').read_bytes()).decode())
-          PY
+        run: cargo +stable build --locked --release -p multi-sync -p multi-sync-bridge
       - name: Native C ABI integration (Linux)
         if: runner.os == 'Linux'
         env:
@@ -75,7 +67,7 @@ jobs:
       - name: Event reader regression test
         run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Rust tests
-        run: cargo +stable test --workspace --release
+        run: cargo +stable test --locked --workspace --release
       - name: Swift tests including QR round-trip
         run: sh scripts/swift.sh test
       - name: Build complete native application
@@ -84,7 +76,7 @@ jobs:
         env:
           MULTISYNC_LIBRARY: target/release/libmulti_sync_bridge.dylib
         run: |
-          cargo +stable build --release -p multi-sync-bridge
+          cargo +stable build --locked --release -p multi-sync-bridge
           python3 tests/bridge_e2e.py
       - name: Real HTTPS integration tests
         env:
@@ -150,7 +142,32 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: apps/android
-          script: ./gradlew --no-daemon connectedDebugAndroidTest
+          script: |
+            set +e
+            ./gradlew --no-daemon connectedDebugAndroidTest
+            test_status=$?
+            adb logcat -d -s MultiSyncSmoke:I AndroidRuntime:E '*:S'
+            exit "$test_status"
+      - name: Android failure details
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          for report in Path('apps/android/app/build/outputs/androidTest-results').rglob('TEST-*.xml'):
+              for failure in ET.parse(report).iter('failure'):
+                  print(failure.get('message', ''))
+                  print((failure.text or '')[:12000])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MultiSync-Android-test-reports
+          path: |
+            apps/android/app/build/reports/tests/
+            apps/android/app/build/reports/androidTests/
+            apps/android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: MultiSync-Android-debug

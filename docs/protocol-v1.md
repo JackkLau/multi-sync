@@ -35,7 +35,8 @@ JSON/UUID/请求体格式错误由 HTTP 框架返回 4xx。未定义接口为 40
 2. 文件 sync 完成后以 SQLite FULL 同步事务提交 offset，之后才返回成功。
 3. 恢复时只承认持久 offset。超过 offset 的未确认尾部截断；短于 offset 视为数据损坏并拒绝继续。
 4. 重发已接收范围会与原字节比对，相同则幂等确认，不重复追加。
-5. 校验整文件后先持久 committing 和 final_name，再用硬链接原子创建最终文件，禁止替换已有目录项。
+5. 校验整文件后先持久 committing 和 final_name，再原子创建最终文件，禁止替换已有目录项。Android/Linux 使用 renameat2(RENAME_NOREPLACE)，Apple/Windows 使用硬链接；不能降级为可能覆盖文件的普通 rename。
+   若原子移动完成但最终 SQLite 检查点尚未写入，重试只在已保留的目标文件是普通文件且大小/哈希均匹配时确认完成，临时文件缺失本身不代表成功。
 6. 崩溃发生在最终文件出现但 completed 尚未记录时，重试验证最终文件内容后完成事务。
 7. 同名文件存在时选择带任务 ID 的另一个名字。不会覆盖原件。提交与临时文件同卷。
 

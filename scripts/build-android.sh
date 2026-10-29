@@ -14,7 +14,7 @@ fi
 if [ -n "${ANDROID_NDK_HOME:-}" ]; then
   ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"; export ANDROID_NDK_ROOT
 fi
-CARGO_PROFILE_RELEASE_DEBUG=1 cargo ndk -t arm64-v8a -t x86_64 --platform 26 -o apps/android/app/src/main/jniLibs build --release -p multi-sync-bridge --features android-jni
+CARGO_PROFILE_RELEASE_DEBUG=1 cargo ndk -t arm64-v8a -t x86_64 --platform 26 -o apps/android/app/src/main/jniLibs build --locked --release -p multi-sync-bridge --features android-jni
 cd apps/android
 sh ./gradlew --no-daemon testDebugUnitTest assembleDebug
 printf '%s\n' "Android APK：$project_root/apps/android/app/build/outputs/apk/debug/app-debug.apk"

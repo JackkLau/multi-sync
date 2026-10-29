@@ -13,7 +13,7 @@ if [ "$ui_only" = false ]; then
     echo "缺少 Rust。安装工具链后重试；只构建界面可加 --ui-only。" >&2
     exit 1
   fi
-  cargo build --release -p multi-sync
+  cargo build --locked --release -p multi-sync
 fi
 sh scripts/swift.sh build -c release
 app="$project_root/dist/MultiSync.app"

@@ -15,8 +15,12 @@ pub fn private_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = options.open(&temp)?;
     file.write_all(bytes)?; file.sync_all()?; drop(file);
     // Callers use new UUID paths or hold the receiver lock; never overwrite a journal.
-    fs::hard_link(&temp, path)?;
-    fs::remove_file(temp)?;
+    multi_sync_core::publish_new(&temp, path)?;
+    match fs::remove_file(temp) {
+        Ok(()) => {},
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}, // moved by atomic publication
+        Err(error) => return Err(error.into()),
+    }
     #[cfg(unix)] { std::fs::File::open(path.parent().unwrap())?.sync_all()?; }
     Ok(())
 }

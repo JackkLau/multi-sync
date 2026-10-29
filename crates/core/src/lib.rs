@@ -84,3 +84,24 @@ pub fn private_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Atomically publish a fully flushed temporary file without replacing any destination.
+/// Linux/Android move the source; other supported platforms retain a hard link until cleanup.
+/// Android's app SELinux policy prohibits hard links, including inside app-private storage.
+pub fn publish_new(source: &Path, destination: &Path) -> std::io::Result<()> {
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    {
+        use std::{ffi::CString, os::unix::ffi::OsStrExt};
+        let source = CString::new(source.as_os_str().as_bytes()).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "source contains NUL"))?;
+        let destination = CString::new(destination.as_os_str().as_bytes()).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "destination contains NUL"))?;
+        // Direct syscall supports Android API 26 without requiring a newer bionic wrapper.
+        // Never fall back to rename(), whose replacement semantics would lose existing data.
+        let result = unsafe {
+            libc::syscall(libc::SYS_renameat2, libc::AT_FDCWD, source.as_ptr(),
+                libc::AT_FDCWD, destination.as_ptr(), libc::RENAME_NOREPLACE)
+        };
+        if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+    }
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    { std::fs::hard_link(source, destination) }
+}
+

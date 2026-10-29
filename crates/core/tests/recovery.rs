@@ -121,3 +121,50 @@ fn missing_checkpoint_bytes_are_never_silently_replaced() {
     assert!(store.chunk(m.id, 5, b" world", &hash_bytes(b" world")).is_err());
     assert_eq!(store.get(m.id).unwrap().offset, 5);
 }
+
+#[test]
+fn publication_never_replaces_an_existing_destination() {
+    let root = tempdir().unwrap();
+    let source = root.path().join("temporary");
+    let destination = root.path().join("existing");
+    fs::write(&source, b"new bytes").unwrap();
+    fs::write(&destination, b"keep existing").unwrap();
+    assert_eq!(multi_sync_core::publish_new(&source, &destination).unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(fs::read(&source).unwrap(), b"new bytes");
+    assert_eq!(fs::read(&destination).unwrap(), b"keep existing");
+    fs::remove_file(&destination).unwrap();
+    multi_sync_core::publish_new(&source, &destination).unwrap();
+    assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    assert!(!source.exists(), "atomic publication moves the temporary file");
+}
+
+#[test]
+fn crash_after_atomic_move_recovers_only_verified_destination() {
+    for corrupt in [false, true] {
+        let root = tempdir().unwrap();
+        let bytes = b"durable before checkpoint";
+        let m = manifest(bytes);
+        let mut store = Store::open(root.path()).unwrap();
+        store.offer(&m).unwrap(); store.approve(m.id).unwrap();
+        store.chunk(m.id, 0, bytes, &hash_bytes(bytes)).unwrap();
+        drop(store);
+        let db = rusqlite::Connection::open(root.path().join(".multisync/tasks.sqlite3")).unwrap();
+        db.execute("UPDATE transfers SET state='committing',final_name=?2 WHERE id=?1", rusqlite::params![m.id.to_string(), m.name]).unwrap();
+        drop(db);
+        let destination = root.path().join(&m.name);
+        fs::rename(root.path().join(format!(".multisync/{}.part", m.id)), &destination).unwrap();
+        let changed = vec![b'x'; bytes.len()];
+        if corrupt { fs::write(&destination, &changed).unwrap(); }
+        let mut store = Store::open(root.path()).unwrap();
+        if corrupt {
+            assert!(store.complete(m.id).is_err());
+            assert_eq!(store.get(m.id).unwrap().state, "committing");
+            assert_eq!(fs::read(&destination).unwrap(), changed);
+        } else {
+            assert_eq!(store.complete(m.id).unwrap().state, "completed");
+            assert_eq!(fs::read(&destination).unwrap(), bytes);
+            assert_eq!(store.complete(m.id).unwrap().state, "completed");
+        }
+    }
+}

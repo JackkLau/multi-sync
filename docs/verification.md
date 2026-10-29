@@ -2,7 +2,7 @@
 
 日期：2026-10-29（Asia/Hong_Kong）。范围为四类操作系统的原生局域网文件收发客户端、共享引擎和二维码连接。构建/回环测试与物理设备验收分别记录。
 
-功能提交：[PR #2](https://github.com/JackkLau/multi-sync/pull/2)。当前移动端/Windows 完整构建正在运行，最终以该 PR 最新提交的检查为准，不能用旧提交的绿灯替代新提交结果。
+客户端主实现已合并：[PR #2](https://github.com/JackkLau/multi-sync/pull/2)。后续平台兼容修复的完整结果见 [Actions](https://github.com/JackkLau/multi-sync/actions)。各项证据均标明对应运行，不能用旧提交的绿灯替代新提交结果。
 
 ## 需求与证据
 
@@ -13,9 +13,9 @@
 | 不自动接收陌生请求 | 新任务 pending，确认前不能上传字节 | Python HTTPS、C ABI、移动端仪器测试 | 桌面共享引擎通过 |
 | 中断与重启不丢任务 | 保存 journal/SQLite；暂停后从已确认位置恢复 | bridge_e2e.py、lan_e2e.py | 三类桌面 runner 的 C ABI 通过 |
 | 内容与原件保留 | 原文件不删除，内容一致，同名不覆盖，恢复不重复 | 真实 TLS 传输后的字节比较 | 桌面共享引擎通过 |
-| Android 可用构建 | APK 包含两种 ABI；模拟器真实 JNI TLS 收发 | GitHub Android 构建与 BridgeSmokeTest | 正在运行 |
-| iPhone/iPad 可用构建 | 真机/模拟器链接真实 Rust 库，模拟器执行 HTTPS 测试 | scripts/build-ios.sh --test | 正在运行 |
-| Windows 完整应用 | 自包含 WinUI exe + Rust DLL，队列模型测试 | scripts/build-windows.ps1 | 正在运行 |
+| Android 可用构建 | APK 包含两种 ABI；模拟器真实 JNI TLS 收发 | GitHub Android 构建与 BridgeSmokeTest | run 40905153482：APK/单元测试通过，仪器测试暴露硬链接限制；修复后以最新 CI 为准 |
+| iPhone/iPad 可用构建 | 真机/模拟器链接真实 Rust 库，模拟器执行 HTTPS 测试 | scripts/build-ios.sh --test | run 40905153482：5 个测试通过、产物上传 |
+| Windows 完整应用 | 自包含 WinUI exe + Rust DLL，队列模型测试 | scripts/build-windows.ps1 | run 40905153482 通过并上传自包含 ZIP |
 | 移动端后台边界 | 后台暂停，手动恢复，停机完成前不可重开 | 生命周期与停止状态源码检查 | 已检查；锁屏/强退/物理设备待验收 |
 
 ## 已完成的共享引擎与 macOS 验证
@@ -46,6 +46,12 @@
 
 ## 修复记录
 
+- Android 模拟器实际启动接收报 Permission denied。AOSP Android 15 的 SELinux app_neverallows.te 禁止普通应用创建硬链接；身份保存和最终文件提交改用 Linux/Android 的原子不覆盖移动，并补上移动完成但 SQLite 未确认时的恢复校验。参见 [AOSP 官方策略](https://android.googlesource.com/platform/system/sepolicy/+/refs/heads/android15-release/private/app_neverallows.te)。
+
+- Android cargo-ndk 参数改为 --platform 26，修复将 API 等级误当包名的构建失败，并统一 NDK 路径。
+- Windows 使用 WinUI 3 的 Microsoft.UI.Text.FontWeights，修复字体 API 编译错误；先验证接收码再绑定批次，修复空码首次发送失败后无法重试。
+- Android 按扩展名打开/分享接收文件，文件名长度对齐引擎的 180 UTF-8 字节限制；保护取消期间的原生句柄创建与清理，独立复查通过。
+
 - 早期 Python TextIO 预读与 select 混用导致事件已在用户缓冲中却误报超时；改为线程读取队列，并保留确定性回归测试。
 - axum-server 接收标准监听器前需要 set_nonblocking(true)；补上非阻塞设置及空闲停机测试，解决 macOS 接收循环阻塞。
 - iOS 停机改为 stop → poll finished → release，停机期间禁止立即重启/续传，避免端口与任务重入。
@@ -57,5 +63,5 @@
 - 未验证 GB 级文件、上万小文件、断电、磁盘满、耗电、吞吐与长期运行；不能作后台无感同步承诺。
 - iOS 产物未签名，真机安装需要自己的 Apple 签名；macOS 仅 ad-hoc 签名，Windows 尚无代码签名，Android 为 debug 签名。未发布商店版本。
 - 密钥保存在应用状态目录，尚未接入 Keychain/Android Keystore/Windows DPAPI；设备撤销和恢复尚未实现。
-- Cargo.lock 当前随 CI 产物保存，仓库尚未锁定 Rust 依赖；发布前需要纳入已验证锁文件。
+- Cargo.lock 来自通过验证的 GitHub Linux 构建（run 40905153482），已纳入源码，包含 231 个包；原子提交修复复用已锁定的 libc，并添加直接依赖记录，CI 通过 --locked 校验。最终跨平台结果仍以最新提交的构建为准。
 - mDNS、目录同步、离线云端投递和其他 App 私有数据同步不在本轮范围。

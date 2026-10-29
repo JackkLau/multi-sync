@@ -22,8 +22,8 @@ rustup target add aarch64-apple-ios "$simulator_target"
 ios_device_sdk=$(xcrun --sdk iphoneos --show-sdk-path)
 ios_simulator_sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
 mkdir -p apps/ios/Native/iphoneos apps/ios/Native/iphonesimulator dist/ios
-SDKROOT="$ios_device_sdk" IPHONEOS_DEPLOYMENT_TARGET=16.0 cargo build -p multi-sync-bridge --release --target aarch64-apple-ios
-SDKROOT="$ios_simulator_sdk" IPHONEOS_DEPLOYMENT_TARGET=16.0 cargo build -p multi-sync-bridge --release --target "$simulator_target"
+SDKROOT="$ios_device_sdk" IPHONEOS_DEPLOYMENT_TARGET=16.0 cargo build --locked -p multi-sync-bridge --release --target aarch64-apple-ios
+SDKROOT="$ios_simulator_sdk" IPHONEOS_DEPLOYMENT_TARGET=16.0 cargo build --locked -p multi-sync-bridge --release --target "$simulator_target"
 cp target/aarch64-apple-ios/release/libmulti_sync_bridge.a apps/ios/Native/iphoneos/
 cp "target/$simulator_target/release/libmulti_sync_bridge.a" apps/ios/Native/iphonesimulator/
 xcodegen generate --spec apps/ios/project.yml --project apps/ios

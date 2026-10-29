@@ -5,7 +5,6 @@ import http.client
 import json
 import os
 from pathlib import Path
-import select
 import socket
 import ssl
 import subprocess
@@ -13,6 +12,8 @@ import tempfile
 import time
 import unittest
 import uuid
+
+from process_events import ProcessEvents
 
 ROOT = Path(__file__).resolve().parents[1]
 BINARY = Path(os.environ.get("MULTISYNC_BIN", ROOT / "target/debug/multi-sync"))
@@ -29,22 +30,14 @@ class PinnedConnection(http.client.HTTPSConnection):
         self.sock = self._context.wrap_socket(raw, server_hostname="multi-sync.local")
 
 
-def event_from(process, timeout=15):
-    if not select.select([process.stdout], [], [], timeout)[0]:
-        raise AssertionError("engine did not emit an event before timeout")
-    line = process.stdout.readline()
-    if not line:
-        raise AssertionError(f"engine exited without event: {process.poll()}")
-    return json.loads(line)
-
-
 class Receiver:
     def __init__(self, inbox):
         self.inbox = inbox
         self.process = subprocess.Popen(
             [str(BINARY), "receive", "--inbox", str(inbox), "--bind", "127.0.0.1:0", "--advertise", "127.0.0.1"],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
-        ready = event_from(self.process)
+        self.events = ProcessEvents(self.process.stdout)
+        ready = self.events.next()
         if ready.get("event") != "ready":
             self.close()
             raise AssertionError(f"receiver startup failed: {ready.get('message', 'unexpected event')}")
@@ -58,6 +51,7 @@ class Receiver:
         except subprocess.TimeoutExpired:
             self.process.kill()
             self.process.wait(timeout=5)
+        self.events.join()
         self.process.stdout.close()
         self.process.stderr.close()
 
@@ -149,12 +143,13 @@ class LanIntegration(unittest.TestCase):
         journal = Path(self.temp.name) / "outgoing/job.json"
         sender = subprocess.Popen([str(BINARY), "send", "--source", str(source), "--journal", str(journal)],
                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+        events = ProcessEvents(sender.stdout)
         try:
             sender.stdin.write(self.receiver.invitation)
             sender.stdin.close()
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
-                event = event_from(sender)
+                event = events.next()
                 if event["event"] == "waiting":
                     self.receiver.decision("approve", event["id"])
                 if event["event"] == "error":
@@ -174,6 +169,7 @@ class LanIntegration(unittest.TestCase):
             if sender.poll() is None:
                 sender.terminate()
                 sender.wait(timeout=10)
+            events.join()
             sender.stdout.close()
             sender.stderr.close()
 

@@ -1,48 +1,56 @@
 # 验证记录
 
-二维码更新：已加入生成、摄像头扫码、图片识别和完整邀请回读测试，并配置 GitHub Actions。当前本地受限终端的图像识别测试仍失败（Vision 像素缓冲创建失败，Core Image 未检出特征），正在通过实际应用及 CI 定位；不能据此声明二维码回读通过。
-本地 `.git/index.lock` 写入被环境拒绝，GitHub 提交改走已连接仓库 API。
+日期：2026-10-29（Asia/Hong_Kong）。当前范围为 Rust 传输引擎、macOS 原生客户端、接收二维码与扫码识别，不代表六类设备全部验收。
 
-以下为首批实现的历史验证记录，更新后的结果将在构建完成后补充。
+代码与后续构建结果：[PR #1](https://github.com/JackkLau/multi-sync/pull/1)。每次代码更新均重新执行 Linux、Windows 和 macOS 构建；以 PR 对应提交的检查结果为准。
 
-日期：2026-10-29（Asia/Hong_Kong）。环境：Apple Silicon macOS，Xcode Swift 6.0.3；无 Rust/Cargo。
+## 首次跨平台构建证据
 
-## 已确认
+来源：[Actions run 40798013044](https://github.com/JackkLau/multi-sync/actions/runs/40798013044)，源提交 `29694e6d17d8a951753145c843f9a893200dbe00`。下表记录该次运行，不用旧结果替代后续提交的检查。
 
-| 验收项 | 新鲜证据 | 结果 |
+| 验收项 | 直接证据 | 结果 |
 | --- | --- | --- |
-| Swift 原生客户端编译 | `sh scripts/swift.sh test` | exit 0，包含应用和测试目标编译 |
-| 队列恢复、错误状态、邀请校验、进程收尾/暂停 | 同上 | 7 个 XCTest，0 失败 |
-| Release app 打包 | `sh scripts/build-macos.sh --ui-only` | exit 0，生成 dist/MultiSync.app，arm64 |
-| 本机 ad-hoc 签名完整性 | `codesign --verify --deep --strict dist/MultiSync.app` | exit 0；不代表公证或发布签名 |
-| 原生窗口实际启动 | 通过系统应用界面打开 MultiSync.app | 发送页与接收页均可见 |
-| 文件选择与移除 | 原生 NSOpenPanel 选择项目 README.md，再从待发送列表移除 | 文件仍存在；未进行任何网络发送 |
-| 缺少引擎的行为 | 实际检查两个页面的辅助功能树及窗口截图 | 明确显示未构建；发送和开启接收均禁用 |
-| UI 合约静态检查 | `audit_project.py <project> --mode strict` | exit 0，0 findings；不等于可访问性全量认证 |
-| Rust 语法树 | 使用本机编辑器已安装的 Tree-sitter Rust grammar 解析 crates 下所有 .rs | 7 文件无语法错误；**不是编译或类型检查** |
-| 脚本/配置格式 | Python AST、`sh -n`、`plutil -lint` | 通过 |
+| Rust 核心与 CLI | Linux、macOS `cargo +stable test --workspace --release` | 各 9 个测试通过 |
+| Windows Rust 核心与 CLI | 同一命令 | 8 个测试通过；Unix 符号链接测试不适用 |
+| Windows / Linux Release CLI | `cargo +stable build --release -p multi-sync` | 构建成功、产物已上传 |
+| macOS Swift 测试 | `sh scripts/swift.sh test` | 11 个 XCTest 通过，其中 4 个二维码用例 |
+| 完整 macOS 应用编译 | `sh scripts/build-macos.sh` | SwiftUI 与 Rust 引擎均构建并打入 app |
+| Linux 真实 HTTPS 集成 | `python3 tests/lan_e2e.py` | 3 个用例通过：重启续传、确认/鉴权/证书/路径限制、真实发送器与幂等 |
+| macOS 真实 HTTPS 集成 | 同上 | 前 2 个通过；发送器事件读取超时，原因与修复见下文 |
 
-Swift 的进程测试使用明确的测试 shell fixture，只证明事件适配、退出与暂停，不证明 Rust 引擎或网络传输。
-最初 Swift 编译遇到默认 module cache 写权限问题，脚本现将缓存放在项目 `.build`；重新运行通过。
-受限终端直接启动 GUI 曾返回 134；随后通过系统应用界面成功启动。未将该终端结果视作 GUI 验证通过。
+macOS 首次运行在集成测试处停止，未执行后续签名检查、ZIP 打包和产物上传。修复提交仍保留这些步骤，不能仅以编译成功认定整条构建通过。
 
-## 尚未验证／阻塞
+## 已定位并修复的问题
 
-- `cargo`、`rustc` 不可用。终端访问 `static.rust-lang.org` 和 `index.crates.io` 均为 curl exit 6（无法解析域名）。没有绕开环境网络限制，也没有安装全局工具。
-- Rust 依赖解析、编译、9 个 Rust 测试、HTTPS 端到端测试均未运行。Cargo.lock 尚未生成，跨平台编译兼容性未确认。
-- `tests/lan_e2e.py` 需要真实 Rust 二进制，缺少时明确失败，不用 mock server 冒充成功。它覆盖接收确认、TLS 错证书、鉴权失败、路径穿越、重启续传、幂等与源文件保留。
-- 官方 DESIGN.md lint 在本地 npm 缓存缺失，离线运行返回 ENOTCACHED。已运行项目 UI 合约静态检查，但不能替代官方 lint。
-- 未验证两台真机、GB 级文件、后台/锁屏/休眠、断电、磁盘满、性能与耗电。
-- 未进行 VoiceOver 完整审计、最小窗口尺寸的全流程检查；当前仅做默认窗口和原生文件选择的视觉/语义检查。
-- Android、iOS/iPadOS、Windows 原生客户端、mDNS、二维码、移动端后台、系统安全存储尚未实现。
+集成测试原先先对 stdout 调用 `select()`，再用 Python TextIO `readline()`。一次底层读取可能预取多条 JSON 行；第二条已经在 TextIO 缓冲中，但操作系统管道没有新字节，导致误报超时。
 
-## 环境可用后的首个执行关口
+已在本地确定性复现：子进程一次写入两条事件后等待输入，旧读取器在第二条超时；随后直接 `readline()` 能读到第二条。修复为独立线程逐行读取并放入队列，消费者在队列上等待。没有延长超时，也没有跳过真实发送测试。
 
-```sh
-cargo test --workspace
-cargo build -p multi-sync
-python3 tests/lan_e2e.py
-sh scripts/build-macos.sh
-```
+回归命令 `python3 -m unittest discover -s tests -p 'test_*.py'` 本地通过，覆盖连续事件、真正无事件时的超时、EOF 和读取线程收尾；该命令也已加入三个 CI 平台和 `scripts/verify.sh`。修复后的完整网络测试结果见 PR 最新检查。
 
-先修复这四步暴露的问题并保存 Cargo.lock，再进行两台真实设备的局域网联调。当前不能宣称“跨平台可靠传输已经验收完成”。
+## 本地原生应用验证
+
+环境：Apple Silicon macOS，Xcode Swift 6.0.3。`sh scripts/build-macos.sh --ui-only` 成功；原生窗口实际启动。
+
+| 用户行为或风险 | 证据 | 结果 |
+| --- | --- | --- |
+| 完整邀请编码与回读 | CI 将包含约 400 字节证书和密钥的邀请生成 QR，再识别并逐字比较 | 通过 |
+| 无效/公网邀请、多接收码 | XCTest 负例 | 拒绝无效和公网邀请；不同邀请不静默选取 |
+| 二维码图片导入 | 在实际 app 的原生文件选择器中导入生成的 PNG | 自动填入邀请，并显示成功提示；没有自动发送 |
+| 摄像头启动边界 | 打开扫码 Sheet 并检查实际控件 | 摄像头保持未开启，提供“开启摄像头”和“取消”；取消返回发送页 |
+| 缺少引擎时的行为 | 本地 ui-only app | 明确提示，收发禁用，无模拟成功 |
+| UI 合约 | `audit_project.py <project> --mode strict` | 0 findings；不是完整可访问性认证 |
+| 应用配置 | `plutil -lint apps/macos/Info.plist` | 通过，包含摄像头用途说明 |
+
+本地受限终端运行二维码回读测试仍失败：Vision 无法创建像素缓冲，Core Image 无法检出特征。同一 PNG 在实际 GUI 中成功识别，同一源码在 GitHub macOS runner 的 11 个 XCTest 全部通过。因此本地终端结果保留为环境限制，不把它改成跳过或宽松断言。
+
+## 仍需验证的边界
+
+- 尚未进行物理摄像头对屏扫码、摄像头拒绝/撤销权限、无摄像头真机的完整流程测试。当前只有识别器与窗口生命周期的证据。
+- 网络集成测试是同一 runner 的真实 HTTPS 回环传输，不是两台设备的 Wi-Fi、防火墙或热点测试；Windows 当前只运行 Rust/事件读取测试和 CLI 构建。
+- 未验证 GB 级文件、上万小文件、锁屏/休眠、断电、磁盘满、耗电及吞吐；不能承诺所有后台场景无感恢复。
+- 应用仅 ad-hoc 签名，没有 Apple 开发者签名、公证或商店发布。
+- CI 生成的 Cargo.lock 随产物保存；本地终端 DNS 受限，无法取回产物以固定仓库依赖。后续发布应先将已验证的锁文件纳入源码。
+- 本地无 Rust/Cargo，Rust 编译证据来自 CI；本地 `.git` 写入被环境拒绝，代码通过已连接 GitHub API 提交。本地工作区文件仍保留，Git 元数据未同步。
+- 官方 DESIGN.md lint 因 npm 离线缓存缺失未运行；VoiceOver 和最小窗口尺寸仍需完整审计。
+- Android、iOS/iPadOS、Windows 原生 UI、mDNS、设备撤销、移动端后台和系统安全存储尚未实现。

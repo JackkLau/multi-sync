@@ -28,7 +28,7 @@ sh scripts/dev-macos.sh --ui-only
 
 ## 完整构建和验证
 
-需要 stable Rust/Cargo 和可访问 crates.io 的网络。首次成功解析依赖后保留生成的 Cargo.lock；当前环境未能生成，依赖解析还未冻结。
+需要 stable Rust/Cargo 和可访问 crates.io 的网络。CI 已成功解析和编译依赖，并将生成的 Cargo.lock 随构建产物保存；仓库尚未固定依赖锁，复现对应构建时请使用产物内的 Cargo.lock。
 
 ```sh
 sh scripts/verify.sh
@@ -115,4 +115,4 @@ docs             协议、实现边界与验证证据
 
 桌面阶段以子进程 JSON 连接 Swift 与 Rust，避免先引入未验证的 FFI；移动端接入时为 `core` 增加 UniFFI/C ABI，平台负责生命周期与权限。
 GitHub Actions 在 PR 和 master 提交时运行 Linux/Windows Rust 构建，以及 macOS 完整应用构建、Swift 二维码回读测试和真实 HTTPS 集成测试，生成 CLI 与应用构建产物。
-下一关口是完成构建与真实 HTTPS 验证，然后接入 Android、iOS、Windows 原生客户端以及 mDNS/设备配对。
+构建产物和最新检查结果见 [GitHub Actions](https://github.com/JackkLau/multi-sync/actions)；当前功能提交见 [PR #1](https://github.com/JackkLau/multi-sync/pull/1)。下一关口是两台真实设备的局域网与摄像头联调，然后接入 Android、iOS、Windows 原生客户端以及 mDNS/设备配对。

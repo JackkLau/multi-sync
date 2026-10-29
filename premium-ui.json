@@ -1,0 +1,10 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["apps/macos/Sources"],
+  "locale": "zh-CN",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Form", "Scrollbar", "Toast"],
+  "requiredCommands": ["unit"],
+  "commands": {"unit": "sh scripts/swift.sh test"},
+  "evidence": {"failurePaths": "apps/macos/Tests/MultiSyncKitTests/ModelsTests.swift"}
+}

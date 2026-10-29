@@ -1,0 +1,75 @@
+name: Build and test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Rust / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select stable Rust
+        run: rustup update stable --no-self-update
+      - name: Core and CLI tests
+        run: cargo +stable test --workspace --release
+      - name: Build CLI
+        run: cargo +stable build --release -p multi-sync
+      - name: Real HTTPS integration tests
+        if: runner.os == 'Linux'
+        env:
+          MULTISYNC_BIN: ${{ github.workspace }}/target/release/multi-sync
+        run: python3 tests/lan_e2e.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multi-sync-cli-${{ matrix.os }}
+          path: |
+            target/release/multi-sync
+            target/release/multi-sync.exe
+            Cargo.lock
+          if-no-files-found: error
+
+  macos:
+    name: macOS app and QR tests
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select stable Rust
+        run: rustup update stable --no-self-update
+      - name: Rust tests
+        run: cargo +stable test --workspace --release
+      - name: Swift tests including QR round-trip
+        run: sh scripts/swift.sh test
+      - name: Build complete native application
+        run: sh scripts/build-macos.sh
+      - name: Real HTTPS integration tests
+        env:
+          MULTISYNC_BIN: ${{ github.workspace }}/target/release/multi-sync
+        run: python3 tests/lan_e2e.py
+      - name: Verify signature and package
+        run: |
+          codesign --verify --deep --strict dist/MultiSync.app
+          ditto -c -k --keepParent dist/MultiSync.app dist/MultiSync-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MultiSync-macOS-${{ runner.arch }}
+          path: |
+            dist/MultiSync-macOS.zip
+            Cargo.lock
+          if-no-files-found: error

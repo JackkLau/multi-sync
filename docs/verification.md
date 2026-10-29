@@ -28,6 +28,8 @@ macOS 首次运行在集成测试处停止，未执行后续签名检查、ZIP �
 
 回归命令 `python3 -m unittest discover -s tests -p 'test_*.py'` 本地通过，覆盖连续事件、真正无事件时的超时、EOF 和读取线程收尾；该命令也已加入三个 CI 平台和 `scripts/verify.sh`。修复后的完整网络测试结果见 PR 最新检查。
 
+第二次构建 `40798623496` 表明上述测试缺陷并非 macOS 超时的唯一原因：队列读取已通过，但真实发送仍超时。进一步核对 axum-server 0.8.0 的 `src/server.rs`，确认它直接调用 Tokio `TcpListener::from_std`，不会自动设置非阻塞模式；我们的监听器仍是标准库默认的阻塞模式，会卡住 accept 循环，影响持久连接和停机。修复为移交 Tokio 前显式 `set_nonblocking(true)`，并增加“接收器空闲时无需新连接即可退出”的真实进程回归测试。网络测试超时时只记录事件类型，便于定位阶段，不输出邀请或密钥。
+
 ## 本地原生应用验证
 
 环境：Apple Silicon macOS，Xcode Swift 6.0.3。`sh scripts/build-macos.sh --ui-only` 成功；原生窗口实际启动。

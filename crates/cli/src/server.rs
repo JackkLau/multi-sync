@@ -58,6 +58,9 @@ pub async fn serve(inbox: PathBuf, bind: SocketAddr, advertise: Ipv4Addr) -> Res
     let identity = Identity::load_or_create(store.state_dir())?;
     let config = axum_server::tls_rustls::RustlsConfig::from_pem(identity.cert_pem.clone().into_bytes(), identity.key_pem.clone().into_bytes()).await?;
     let listener = std::net::TcpListener::bind(bind)?;
+    // axum-server 0.8 hands this socket to Tokio without changing its mode.
+    // A blocking accept can stall keep-alive requests and graceful shutdown.
+    listener.set_nonblocking(true)?;
     let port = listener.local_addr()?.port();
     let state = AppState { store: Arc::new(Mutex::new(store)), token: identity.token.clone() };
     let app = Router::new().route("/v1/transfers", post(offer))

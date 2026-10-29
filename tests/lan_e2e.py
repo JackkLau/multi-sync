@@ -98,6 +98,13 @@ class LanIntegration(unittest.TestCase):
         return self.receiver.request("PUT", f"/v1/transfers/{manifest['id']}/chunks?offset={offset}", data,
                                      {"x-chunk-sha256": hashlib.sha256(data).hexdigest()})
 
+    def test_idle_receiver_shutdown_does_not_need_another_connection(self):
+        # Establish that the server is serving before signaling it, then leave it idle.
+        status, _ = self.receiver.request("GET", f"/v1/transfers/{uuid.uuid4()}")
+        self.assertEqual(status, 409)
+        self.receiver.process.terminate()
+        self.assertEqual(self.receiver.process.wait(timeout=5), 0)
+
     def test_accept_resume_restart_and_keep_both(self):
         data = os.urandom(2 * 1024 * 1024 + 123)
         source = Path(self.temp.name) / "source.bin"
@@ -148,8 +155,13 @@ class LanIntegration(unittest.TestCase):
             sender.stdin.write(self.receiver.invitation)
             sender.stdin.close()
             deadline = time.monotonic() + 30
+            observed_events = []
             while time.monotonic() < deadline:
-                event = events.next()
+                try:
+                    event = events.next()
+                except AssertionError as error:
+                    self.fail(f"{error}; event types observed: {observed_events}")
+                observed_events.append(event["event"])
                 if event["event"] == "waiting":
                     self.receiver.decision("approve", event["id"])
                 if event["event"] == "error":

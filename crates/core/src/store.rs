@@ -1,4 +1,4 @@
-use crate::{hash_bytes, hash_file, private_dir, Manifest, Transfer, CHUNK_SIZE};
+use crate::{hash_bytes, hash_file, private_dir, publish_new, Manifest, Transfer, CHUNK_SIZE};
 use anyhow::{bail, ensure, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use std::{fs::{self, File, OpenOptions}, io::{Read, Seek, SeekFrom, Write}, path::{Path, PathBuf}, time::Duration};
@@ -132,6 +132,21 @@ impl Store {
         if job.state == "completed" { return Ok(job); }
         ensure!(matches!(job.state.as_str(), "receiving" | "committing"), "任务无法提交");
         ensure!(job.offset == job.manifest.size, "文件尚未接收完整");
+        // A no-replace rename can finish before the completed checkpoint is committed.
+        // Recover only the reserved, fully verified destination; a missing partial alone
+        // is never evidence of success.
+        if job.state == "committing" && matches!(fs::symlink_metadata(&part), Err(ref e) if e.kind() == std::io::ErrorKind::NotFound) {
+            let name = job.final_name.as_ref().context("提交任务缺少目标文件名")?;
+            let destination = self.root.join(name);
+            let meta = fs::symlink_metadata(&destination).context("提交文件丢失，保留任务等待恢复")?;
+            ensure!(meta.is_file() && !meta.file_type().is_symlink() && meta.len() == job.manifest.size
+                && hash_file(&destination)? == job.manifest.sha256, "提交文件不完整或已被修改，未确认完成");
+            sync_directory(&self.root)?;
+            sync_directory(&self.state)?;
+            tx.execute("UPDATE transfers SET state='completed' WHERE id=?1", [id.to_string()])?;
+            tx.commit()?;
+            return self.get(id);
+        }
         let file = regular_file(&part)?;
         ensure!(file.metadata()?.len() >= job.offset, "临时文件损坏");
         file.set_len(job.offset)?; file.sync_all()?;
@@ -163,16 +178,17 @@ impl Store {
         tx.execute("UPDATE transfers SET state='committing',final_name=?2 WHERE id=?1", params![id.to_string(), final_name])?;
         tx.commit()?;
         let destination = self.root.join(&final_name);
-        match fs::hard_link(&part, &destination) {
+        match publish_new(&part, &destination) {
             Ok(()) => {},
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 let meta = fs::symlink_metadata(&destination)?;
                 ensure!(meta.is_file() && !meta.file_type().is_symlink() && hash_file(&destination)? == job.manifest.sha256,
                     "提交位置被其他文件占用，请移走该文件后重试；现有文件未被覆盖");
             },
-            Err(e) => return Err(e).context("无法原子提交文件，接收磁盘需支持硬链接"),
+            Err(e) => return Err(e).context("无法原子提交文件，接收位置需支持不覆盖的原子提交"),
         }
         sync_directory(&self.root)?;
+        sync_directory(&self.state)?;
         self.conn.execute("UPDATE transfers SET state='completed' WHERE id=?1", [id.to_string()])?;
         // Failure to clean a private partial does not turn successful delivery into a failure.
         let _ = fs::remove_file(part);

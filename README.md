@@ -62,7 +62,7 @@ sh scripts/dev-macos.sh --ui-only
 
 ## 完整构建和验证
 
-需要 stable Rust/Cargo 和可访问 crates.io 的网络。CI 已成功解析和编译依赖，并将生成的 Cargo.lock 随构建产物保存；仓库尚未固定依赖锁，复现对应构建时请使用产物内的 Cargo.lock。
+需要 stable Rust/Cargo 和可访问 crates.io 的网络。仓库固定了 CI 实际构建通过的 Cargo.lock，构建产物也保留对应锁文件。
 
 ```sh
 sh scripts/verify.sh
@@ -130,7 +130,7 @@ target/debug/multi-sync send --journal "$PWD/.local/outgoing/photo.json"
 - 暂只支持 IPv4 局域网普通文件。目录递归、文本/链接、系统分享入口随后接入。
 - 当前私钥和邀请保存在用户私有状态目录（Unix 0700/0600）；尚未接入 Keychain、Windows DPAPI 等系统安全存储，Windows ACL 也未验证。不要当作生产版凭据管理。
 - 接收邀请重启后仍有效；停止监听不会撤销邀请。每个新文件仍需本地确认。
-- 接收目录须支持同卷硬链接（如 APFS/NTFS）。暂不支持 FAT/exFAT；不支持时提交会明确报错并保留任务。
+- 接收目录须支持同卷、不覆盖的原子提交：Android/Linux 使用 `renameat2(RENAME_NOREPLACE)`，Apple/Windows 使用硬链接。桌面外置 FAT/exFAT 尚未支持；不支持时明确报错并保留任务。
 - 首版保留拒绝/失败任务和临时数据，不自动清理；清理策略与 UI 尚未实现。
 - 校验大文件可能较慢。网络请求有超时；若提交结果未知，再次继续会查询真实状态，不能仅凭进度 100% 宣称完成。
 - Android、iPhone/iPad 在进入后台时暂停收发并保留任务。回到应用后手动开启接收/继续发送；没有后台常驻或锁屏持续传输承诺。

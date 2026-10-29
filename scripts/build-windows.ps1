@@ -4,7 +4,7 @@ Push-Location $projectRoot
 try {
     dotnet run --project apps/windows/ModelChecks/ModelChecks.csproj --configuration Release
     if ($LASTEXITCODE -ne 0) { throw 'Windows model checks failed.' }
-    cargo build --release -p multi-sync-bridge
+    cargo build --locked --release -p multi-sync-bridge
     if ($LASTEXITCODE -ne 0) { throw 'Rust bridge build failed.' }
     dotnet publish apps/windows/MultiSync.Windows.csproj --configuration Release --runtime win-x64 -p:Platform=x64 --output dist/windows
     if ($LASTEXITCODE -ne 0) { throw 'WinUI application build failed.' }

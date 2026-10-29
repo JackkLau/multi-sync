@@ -1,158 +1,78 @@
 # MultiSync
 
-跨品牌个人设备的文件与数据共享空间。当前实现 **局域网文件传送与四类系统的原生客户端**：Android 手机/平板、iPhone/iPad、Windows、macOS。
+**让不同品牌的手机、平板和电脑，在同一局域网内直接传文件。**
 
-首版约束：两端连接同一 Wi-Fi、手机热点或路由器；发送只读源文件，接收创建副本；不传播修改或删除。
-这是开发预览；收发、扫码、队列和构建已接入真实传输引擎，物理设备间的网络、摄像头及后台行为仍需验收。目录自动同步、云端投递和家庭共享不在当前版本内。
+[![Build and test](https://github.com/JackkLau/multi-sync/actions/workflows/build.yml/badge.svg)](https://github.com/JackkLau/multi-sync/actions/workflows/build.yml)
 
-## 已写入的实现
+[下载安装](#下载与安装) · [快速上手](#快速上手) · [开发文档](docs/development.md) · [反馈问题](https://github.com/JackkLau/multi-sync/issues)
 
-- Rust 核心：SQLite 任务、人工接受、1 MiB 顺序分块、SHA-256 分块/整文件校验、重启续传、重复请求处理。
-- 接收安全：拒绝远程路径与跨平台保留名，临时文件隔离，不静默覆盖同名文件，磁盘空间检查。
-- Rust CLI：HTTPS 接收服务、绑定邀请中的自签证书的发送端、持久发送 journal、JSON 行进度事件。
-- macOS：SwiftUI 原生发送/接收页面，多文件串行队列、暂停/继续/重试、持久历史、接收确认、Finder 定位；接收二维码、摄像头扫码与二维码图片识别。
-- Android：Kotlin + Compose 自适应手机/平板界面，JNI 收发、持久队列、接收确认、扫码/图片识别、文件打开/分享/另存。
-- iPhone/iPad：SwiftUI 自适应界面，C ABI 收发、串行队列、文件选择/预览/导出、摄像头与图片扫码。
-- Windows：WinUI 3 自包含客户端，C ABI 收发、持久队列、接收确认、摄像头/图片识别、系统文件与二维码分享。
-- 各端接收页：开启接收后自动生成本机二维码，可以直接复制接收码或分享二维码，**不需要先粘贴接收码**。
-- 测试：核心恢复用例、独立 Python HTTPS/C ABI 集成、Swift QR 回读、Android JNI 模拟器、iOS 模拟器原生引擎测试。
+MultiSync 为 Android、iPhone/iPad、Windows 和 macOS 提供原生客户端。无需注册账号，也无需把文件上传到云端：接收设备展示二维码，发送设备扫码连接，确认后即可传送文件。
 
-实现存在不等于验证通过。最新证据和限制见 [docs/verification.md](docs/verification.md)。
+> **开发预览**：当前支持局域网文件传送。发送后双方保留独立副本，不传播修改或删除。自动目录同步、远程离线投递和家庭共享仍在规划中；真机扫码与跨设备 Wi-Fi 尚需进一步验收。
 
-## 下载和打开工程
+## 核心功能
 
-GitHub [Actions](https://github.com/JackkLau/multi-sync/actions) 的成功运行底部提供以下构建产物；请查看与最新提交一致的运行。
+- **跨平台互传**：手机素材传电脑、电脑资料传平板，四类系统使用同一传输协议。
+- **扫码即连接**：开启接收后自动生成本机二维码，直接复制接收码或分享二维码；发送端支持相机扫码和图片识别，无需先粘贴才能分享自己的接收码。
+- **中断后继续**：保存任务、进度和历史记录，支持暂停、继续与重试；重启后可恢复未完成的任务。
+- **接收由你确认**：每份新文件都需接收方确认，扫码只选择目标，不会自动发送或接收。
+- **保护文件内容**：HTTPS 加密传输，分块与整文件校验；保留源文件，同名文件不静默覆盖。
+- **原生操作体验**：手机与平板自适应布局，使用系统文件选择器，接收后可打开、定位或导出文件。
 
-| 平台 | 产物 | 本地工程与构建入口 |
-| --- | --- | --- |
-| Android | `MultiSync-Android-debug` 中的 `app-debug.apk` | Android Studio 打开 `apps/android`；`sh scripts/build-android.sh` |
-| iPhone / iPad | 未签名 `.ipa`、模拟器 `.app` ZIP、XCTest 结果 | `sh scripts/build-ios.sh --test`；生成后打开 `apps/ios/MultiSyncIOS.xcodeproj` |
-| Windows x64 | `MultiSync-Windows-x64.zip`，完整解压后运行 exe | `pwsh -File scripts/build-windows.ps1` |
-| macOS | `MultiSync-macOS.zip` | `sh scripts/build-macos.sh` |
+## 下载与安装
 
-Android APK 使用调试签名，可用于开发测试。iOS 真机安装需要自己的 Apple 签名，未签名 IPA 不能直接安装；模拟器 ZIP 仅供匹配架构的 iOS Simulator 使用。macOS 目前仅 ad-hoc 签名。
+目前通过 **GitHub Actions 提供开发预览包**，尚未发布正式 Release 或应用商店版本。下列下载对应 [已通过全部 6 项任务的构建 #10](https://github.com/JackkLau/multi-sync/actions/runs/40911292441)，源码提交为 [`7a7972e`](https://github.com/JackkLau/multi-sync/commit/7a7972edbf824b230163a5dcfec57ab414eca25c)。
 
-### Android Studio 打开与调试
+| 平台 | 系统与架构 | 下载 | 安装方式 |
+| --- | --- | --- | --- |
+| Android 手机 / 平板 | Android 8.0+；arm64-v8a / x86_64 | [Android APK](https://github.com/JackkLau/multi-sync/actions/runs/40911292441/artifacts/12913409725) | 解压下载包后安装 `app-debug.apk`，为调试签名版本 |
+| iPhone / iPad | iOS / iPadOS 16+ | [iOS 构建包](https://github.com/JackkLau/multi-sync/actions/runs/40911292441/artifacts/12914711968) | 含未签名 IPA 和模拟器应用；真机需自行签名，见 [iOS 指南](apps/ios/README.md) |
+| Windows | Windows 10 1809+ / Windows 11；x64 | [Windows 应用包](https://github.com/JackkLau/multi-sync/actions/runs/40911292441/artifacts/12915065700) | 完整解压内含的 `MultiSync-Windows-x64.zip`，运行 `MultiSync.Windows.exe` |
+| macOS | macOS 13+；Apple Silicon | [macOS 应用包](https://github.com/JackkLau/multi-sync/actions/runs/40911292441/artifacts/12913663241) | 解压内含的 `MultiSync-macOS.zip`，将 `MultiSync.app` 移入“应用程序” |
 
-1. 在 Android Studio 选择 **Open**，打开仓库下的 **`apps/android`**，不要把 Rust 仓库根目录当作 Android 工程。
-2. Gradle JDK 选 JDK 17；SDK Manager 安装 Android SDK 35、Build Tools 35.0.0 和 NDK 28.2.13676358。项目固定 Gradle 8.11.1 / AGP 8.9.2 / Kotlin 2.1.20。
-3. 安装 stable Rust 与 `cargo-ndk`，在仓库根目录运行：
+下载 Actions 产物需要登录 GitHub，产物有保留期限。链接失效时，请到 [Build and test](https://github.com/JackkLau/multi-sync/actions/workflows/build.yml) 选择一次成功运行，在页面底部的 **Artifacts** 中下载对应平台包，或[从源码构建](docs/development.md)。下载操作见 [GitHub 官方说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)。
 
-   ```sh
-   rustup target add aarch64-linux-android x86_64-linux-android
-   cargo install cargo-ndk --version 4.0.0 --locked
-   sh scripts/build-android.sh
-   ```
+iOS 未签名 IPA **不能直接安装**，模拟器包需匹配模拟器架构。macOS 包仅做 ad-hoc 签名、尚未公证，Windows 包尚未签名；这些都是测试构建。
 
-4. 等待 Gradle Sync，选择 `app` / `debug`，连接开启 USB 调试的 Android 8.0+ arm64 手机，或启动 x86_64 模拟器，点击 **Debug**。Kotlin 入口是 `MainActivity.kt`，业务状态在 `TransferModel.kt`。
-5. 局域网联调优先使用两台真实设备接入同一 Wi-Fi；模拟器的虚拟地址通常不能直接作为其他设备可达的接收地址。二维码生成、复制和图片识别可以先在模拟器调试。
+## 快速上手
 
-缺少 Rust `.so` 时工程会明确报错，避免生成只有界面却无法收发的 APK。修改 Rust 后重新执行构建脚本；仅改 Kotlin 时可直接从 Android Studio 构建。详细说明见 [Android README](apps/android/README.md) 和 [iOS README](apps/ios/README.md)。
+1. **连接同一网络**：两台设备接入同一 Wi-Fi、手机热点或路由器，打开 MultiSync；移动设备保持应用在前台。
+2. **接收端展示二维码**：进入接收页面，选择本机局域网地址，点击开启接收。本机会自动生成二维码，可直接展示、复制接收码或分享二维码图片。
+3. **发送端扫码并选文件**：点击“扫码连接”或导入二维码图片，核对接收目标，选择文件并发送。粘贴已有接收码也是可选方式。
+4. **确认并收取文件**：接收端逐份确认；校验完成后即可打开、定位或导出。中断的任务可从任务列表继续。
 
-## 先运行 macOS 界面
+接收码包含连接凭据，请仅分享给目标设备。相机只在主动扫码时启用，二维码识别在本机完成。
 
-需要 macOS 13+ 和 Xcode/Swift 工具链，无外部 Swift 依赖。
+## 使用须知
 
-```sh
-sh scripts/dev-macos.sh --ui-only
-```
+- **连接不通**：检查两端地址、接收状态和防火墙；默认使用 TCP `53318`。访客 Wi-Fi、AP 隔离或不同网段可能阻止直连，二维码无法绕过网络隔离。目前使用 IPv4，尚无自动设备发现。
+- **手机切到后台**：Android、iPhone/iPad 会暂停收发并保留任务；返回应用后手动开启接收或继续发送。
+- **长期保存文件**：移动端文件位于应用管理空间，请通过导出或另存保留重要文件；卸载或清除应用数据会删除应用内副本和任务。
 
-此命令构建并打开 `dist/MultiSync.app`，开发数据存放在项目的 `.local/macos`。
-缺少 Rust 引擎时，界面会明确提示“传输引擎尚未构建”并禁用收发，不模拟传输。
+完整能力、文件系统要求与安全边界见[功能与实现状态](docs/project-status.md)，测试覆盖范围见[验证记录](docs/verification.md)。
 
-## 完整构建和验证
+## 文档
 
-需要 stable Rust/Cargo 和可访问 crates.io 的网络。仓库固定了 CI 实际构建通过的 Cargo.lock，构建产物也保留对应锁文件。
+| 文档 | 内容 |
+| --- | --- |
+| [功能与实现状态](docs/project-status.md) | 各端实现清单、扫码流程、当前限制、源码结构和后续计划 |
+| [构建与调试](docs/development.md) | Android Studio 打开方式、各平台工具链、构建与验证命令 |
+| [CLI 使用](docs/cli.md) | 命令行收发、确认与断点续传 |
+| [传输协议](docs/protocol-v1.md) / [原生桥接](docs/native-bridge.md) | HTTPS 协议、恢复规则与 C ABI / JNI 接口 |
+| [验证记录](docs/verification.md) | CI 证据、已修复问题与待完成的真机验收 |
 
-```sh
-sh scripts/verify.sh
-sh scripts/build-macos.sh
-open dist/MultiSync.app
-```
+## 路线图
 
-完整构建会把 Rust 引擎放入 app bundle。应用仅做本机 ad-hoc 签名，未做开发者签名或公证。
-也可在界面中选择已经构建好的 `target/debug/multi-sync`。
+- 完成四类系统间的真机网络、扫码和生命周期验收。
+- 增加自动发现、设备配对、信任管理与撤销。
+- 逐步扩展到选择性目录同步、照片归档、远程投递和家庭共享。
 
-独立检查：
+以上为规划方向，当前下载包的能力以[实现状态](docs/project-status.md)为准。
 
-```sh
-sh scripts/swift.sh test
-cargo test --workspace
-cargo build -p multi-sync
-python3 tests/lan_e2e.py
-```
+## 参与贡献
 
-## 扫码连接
+欢迎通过 [Issues](https://github.com/JackkLau/multi-sync/issues) 提交问题和建议，或通过 Pull Request 改进项目。报告问题时，请附上系统版本、应用提交或构建编号、网络环境、复现步骤及已脱敏的错误信息；不要上传接收码、私钥或个人文件。开发前请阅读[构建与调试](docs/development.md)及相关协议文档。
 
-1. 接收设备打开“接收文件”，选择本机局域网地址，点击“开启接收”；桌面可选择接收目录，移动端使用应用管理目录。
-2. 本机自动生成含连接信息与接收凭据的二维码。直接给另一台设备扫描，或点击“复制接收码”“分享二维码”。此步骤不需要输入或粘贴任何内容。
-3. 发送设备点击“扫码连接”，对准接收码；也可选择二维码图片。主动粘贴已有接收码只是备用入口。
-4. 识别后显示接收目标；选择文件、点击发送，对方逐份确认接收。扫描本身不会发送文件。
+## 许可证
 
-相机权限仅在主动选择扫码/开启摄像头时申请。取消、关闭扫码窗口或识别成功都会停止摄像头；画面只在本机处理。
-二维码沿用 `msync1:` 邀请格式，不把密钥上传到第三方网站。四类系统使用相同格式；二维码携带接收凭据，不要公开分享。
-
-## 两台电脑通过 CLI 收发
-
-两台设备均先构建 `cargo build -p multi-sync`。以下以 macOS/Linux shell 为例。
-接收方把地址替换成本机实际局域网 IPv4 地址：
-
-```sh
-target/debug/multi-sync receive --inbox "$PWD/.local/inbox" --advertise 192.168.1.8
-```
-
-首个 JSON 事件给出 `ticket`。它是敏感接收邀请，请仅交给指定设备。发送方执行：
-
-```sh
-target/debug/multi-sync send --source /absolute/path/photo.jpg --journal "$PWD/.local/outgoing/photo.json"
-```
-
-粘贴接收邀请后按 Enter，再按 Ctrl-D 结束输入。接收方在另一终端确认文件：
-
-```sh
-target/debug/multi-sync jobs --inbox "$PWD/.local/inbox"
-target/debug/multi-sync approve --inbox "$PWD/.local/inbox" --id <任务ID>
-# 或 reject 拒绝该任务。
-```
-
-Ctrl-C 暂停发送。接收方保持或重新启动服务后，发送方继续同一任务：
-
-```sh
-target/debug/multi-sync send --journal "$PWD/.local/outgoing/photo.json"
-```
-
-接收目录、身份和 journal 不变时，继续使用同一任务 ID；已完成任务重试不产生第二份副本。
-接收方端口默认为 53318；防火墙需允许该应用的局域网连接。本机双进程测试可使用 127.0.0.1。
-
-## 当前边界
-
-- 二维码和手动接收邀请共用同一协议；mDNS、设备级信任/撤销还未实现。
-- 暂只支持 IPv4 局域网普通文件。目录递归、文本/链接、系统分享入口随后接入。
-- 当前私钥和邀请保存在用户私有状态目录（Unix 0700/0600）；尚未接入 Keychain、Windows DPAPI 等系统安全存储，Windows ACL 也未验证。不要当作生产版凭据管理。
-- 接收邀请重启后仍有效；停止监听不会撤销邀请。每个新文件仍需本地确认。
-- 接收目录须支持同卷、不覆盖的原子提交：Android/Linux 使用 `renameat2(RENAME_NOREPLACE)`，Apple/Windows 使用硬链接。桌面外置 FAT/exFAT 尚未支持；不支持时明确报错并保留任务。
-- 首版保留拒绝/失败任务和临时数据，不自动清理；清理策略与 UI 尚未实现。
-- 校验大文件可能较慢。网络请求有超时；若提交结果未知，再次继续会查询真实状态，不能仅凭进度 100% 宣称完成。
-- Android、iPhone/iPad 在进入后台时暂停收发并保留任务。回到应用后手动开启接收/继续发送；没有后台常驻或锁屏持续传输承诺。
-- 移动端和 Windows 会暂存用户所选文件，避免文件选择授权失效影响恢复；原文件保留。接收文件要长期保存时使用导出/另存。卸载或清除移动端数据会删除应用内副本、身份和任务。
-- 不保证休眠传输或源文件变化时自动建立新快照；源文件变化会停止并要求重新发送。
-- 没有遥测、账号、云存储、中继和删除同步。
-
-## 结构与下一步
-
-```text
-crates/core       文件与任务不变量、SQLite、校验、提交
-crates/cli        HTTPS 平台适配、邀请、命令行、进度事件
-crates/bridge     移动端与 Windows 的 C ABI / JNI 接口
-apps/macos       原生 SwiftUI 工作台和桌面进程适配
-apps/android     Kotlin Compose 手机/平板客户端
-apps/ios         SwiftUI iPhone/iPad 客户端
-apps/windows     WinUI 3 Windows x64 客户端
-tests            独立协议集成测试
-scripts          构建、启动和验证
-docs             协议、实现边界与验证证据
-```
-
-macOS 通过子进程 JSON 连接 Rust；移动端和 Windows 使用共享 [C ABI/JNI 合约](docs/native-bridge.md)。平台负责文件授权、二维码、界面和生命周期，传输核心负责检查点、校验及提交。
-GitHub Actions 在 PR、master 提交和手动触发时构建四类系统，Android 与 iOS 分别运行模拟器引擎测试；桌面执行真实 HTTPS 集成测试。
-客户端主实现已合并，见 [PR #2](https://github.com/JackkLau/multi-sync/pull/2)；平台兼容修复与最新构建请查看 Actions。下一关口是四类真实设备间的局域网、摄像头和系统生命周期验收，再开展 mDNS/设备配对与目录同步。
+项目尚未选定开源许可证，当前 `Cargo.toml` 标记为 `UNLICENSED`。第三方依赖及随附工具遵循各自许可证。

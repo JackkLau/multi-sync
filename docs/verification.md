@@ -6,6 +6,8 @@
 
 ## 需求与证据
 
+最新已确认的应用构建基线为提交 `7a7972edbf824b230163a5dcfec57ab414eca25c` 的 [run 40911292441（#10）](https://github.com/JackkLau/multi-sync/actions/runs/40911292441)。六项任务全部成功：Linux/Windows Rust、macOS 应用与二维码测试、Windows 原生应用、Android APK 与真实 JNI HTTPS 模拟器测试、iPhone/iPad 构建与 5 项 XCTest。四端应用包均已上传，产物关联的源码提交一致。下表及后文保留此前运行和修复经过，不能将早期失败视为此基线仍未解决的问题。
+
 | 需求或风险 | 可观察行为 | 验证路径 | 当前证据 |
 | --- | --- | --- | --- |
 | 本机接收码不依赖粘贴 | 开启接收 → 引擎 ready → 本机 QR；复制/原生分享 | 四端 UI 与 ready 事件调用链检查 | 实现已核对；物理设备待验收 |

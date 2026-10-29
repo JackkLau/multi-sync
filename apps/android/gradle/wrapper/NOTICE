@@ -1,0 +1,6 @@
+Gradle Wrapper 8.11.1
+Copyright Gradle, Inc. and contributors.
+Source: https://github.com/gradle/gradle/blob/v8.11.1/gradle/wrapper/gradle-wrapper.jar
+Source Git blob: a4b76b9530d66f5e68d973ea569d8e19de379189
+Distributed under the Apache License 2.0 (see LICENSE).
+The wrapper JAR is unmodified; launcher scripts in this project are project-specific.

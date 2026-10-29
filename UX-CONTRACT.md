@@ -1,26 +1,27 @@
-# 首个原生桌面切片的交互约定
+# 原生多设备文件收发的交互约定
 
 业务来源：当前用户的产品方案与“同网络传输、保留源文件”决定，落在 [README.md](README.md) 和 [docs/protocol-v1.md](docs/protocol-v1.md)。
-视觉由 [DESIGN.md](DESIGN.md) 与 Theme.swift 管理。当前为原生 SwiftUI 工具，不适用 HTML 控件与浏览器弹窗规则。
+视觉由 [DESIGN.md](DESIGN.md) 与平台适配器管理。使用 SwiftUI、Compose、WinUI 原生组件，不适用 HTML 控件与浏览器弹窗规则。
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 | --- | --- | --- | --- | --- |
-| Form | ContentView + AppModel | protocol-v1.md | 原生 TextField/SecureField，NSOpenPanel | Swift 测试与原生界面检查 |
-| Scrollbar | SwiftUI ScrollView | DESIGN.md | macOS 系统滚动条 | 原生窗口检查 |
-| Toast | AppModel.notice | 本文 | 持久顶部提示，任务内错误 | 状态解码测试 |
+| Form | 各端 ContentView/MainActivity/MainWindow 与业务模型 | protocol-v1.md、native-bridge.md | 原生输入、系统文件选择、接收确认 | 模型测试与平台构建 |
+| Scrollbar | SwiftUI ScrollView、Compose verticalScroll、WinUI ScrollViewer | DESIGN.md | 系统滚动行为、手机单栏/平板导航 | 原生界面检查 |
+| Toast | AppModel.notice、MobileModel.notice、UiState.notice、WinUI InfoBar | 本文 | 持久提示、任务内错误 | 状态解码及故障路径测试 |
 
-- 选择文件不会发送。点击发送后先持久化队列，再运行引擎；批量任务串行执行。
+- 选择文件不会发送。点击发送后先持久化队列，再运行引擎；同一客户端同时最多发送一个任务。Android 逐份点击发送，其他端支持批量串行。
 - 接收邀请默认遮盖，可显示或隐藏；不自动读取剪贴板。拒绝任意公网目的地址。
-- 接收开启后展示完整邀请二维码，停止后移除；保留复制入口。发送页支持摄像头和图片扫码，识别后只填入邀请，不自动发送文件。
+- 接收开启后自动生成本机二维码，停止后移除；直接提供复制接收码和分享二维码，不能要求先粘贴才能分享本机接收码。发送页以摄像头/图片扫码为主要入口，主动粘贴为备用；识别后不自动发送文件。
 - 摄像头仅在扫码窗口内点击“开启摄像头”后申请权限和启动；关闭、取消或识别成功即停止。拒绝权限/无摄像头时说明原因，并提供图片识别入口。
 - 二维码图片最多 20 MB，按缩略图解码；无二维码、非本产品邀请和多个不同接收码分别报错，不覆盖已有邀请。帧和图片不上传、不持久记录密钥。
 - 对方每份文件必须显式接受；邀请只授予提出传输和上传已接受文件的能力，尚不是完整可信设备配对。
-- 发送可暂停/继续。暂停终止本地发送进程；重试使用同一 journal，向接收方查询持久检查点。
+- 发送可暂停/继续。macOS 暂停本地发送进程，其他端通过 C ABI/JNI 停止对应任务；重试使用同一 journal，向接收方查询持久检查点。
+- 移动端后台暂停并保留任务，返回后手动恢复；切换到外部分享应用也可能触发暂停。界面必须明确提示，不承诺全天候接收。
 - 尚未开始、未生成 journal 的任务在重启后要求重新提供邀请；已生成 journal 的任务可继续。未完成任务不自动消失。
 - 未读出旧队列时保留原文件并禁止新写入，不把读取失败视为空历史。
 - 完成只在接收方返回 completed 后显示。传完字节但正在校验时显示“对方正在校验并保存”。
 - 接收状态 receiving 只说明已接受，不代表此刻网络活跃；文案明确“等待或接收数据”。
 - 网络失败保留任务、显示原因并提供重试；没有自动无限重试和伪装在线状态。
 - 拒绝文件不会删除源文件或已完成副本；首版不提供删除历史/清理临时文件的 UI。
-- 按钮使用原生语义；图标动作有中文辅助名称；键盘、焦点和选择器由 macOS 管理。
+- 按钮使用原生语义；图标动作有中文辅助名称；键盘、焦点和选择器由操作系统管理。
 - 无后端时收发被禁用。开发预览不得把界面构建成功写成跨设备传输验证成功。

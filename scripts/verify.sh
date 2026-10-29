@@ -8,6 +8,10 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 1
 fi
 cargo test --workspace
-cargo build -p multi-sync
+cargo build -p multi-sync -p multi-sync-bridge
 python3 tests/lan_e2e.py
+case "$(uname -s)" in
+  Darwin) MULTISYNC_LIBRARY=target/debug/libmulti_sync_bridge.dylib python3 tests/bridge_e2e.py ;;
+  Linux) MULTISYNC_LIBRARY=target/debug/libmulti_sync_bridge.so python3 tests/bridge_e2e.py ;;
+esac
 if [ "$(uname -s)" = Darwin ]; then sh scripts/swift.sh test; fi

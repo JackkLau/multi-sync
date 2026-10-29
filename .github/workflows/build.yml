@@ -93,3 +93,104 @@ jobs:
             dist/MultiSync-macOS.zip
             Cargo.lock
           if-no-files-found: error
+
+  android:
+    name: Android phone and tablet APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;28.2.13676358'
+      - name: Rust Android toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup target add aarch64-linux-android x86_64-linux-android
+          cargo install cargo-ndk --version 4.0.0 --locked
+      - name: Build JNI engine, unit tests and APK
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+          sh scripts/build-android.sh
+      - name: Verify packaged native engines
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+          apk = Path('apps/android/app/build/outputs/apk/debug/app-debug.apk')
+          with zipfile.ZipFile(apk) as archive:
+              for abi in ['arm64-v8a', 'x86_64']:
+                  name = f'lib/{abi}/libmulti_sync_bridge.so'
+                  assert archive.getinfo(name).file_size > 0, name
+              assert 'AndroidManifest.xml' in archive.namelist()
+          print('APK contains manifest and both native ABI libraries')
+          PY
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android JNI HTTPS integration
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: apps/android
+          script: ./gradlew --no-daemon connectedDebugAndroidTest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MultiSync-Android-debug
+          path: |
+            apps/android/app/build/outputs/apk/debug/app-debug.apk
+            apps/android/app/build/reports/tests/testDebugUnitTest/
+            apps/android/app/build/reports/androidTests/connected/
+            Cargo.lock
+          if-no-files-found: error
+
+  ios:
+    name: iPhone and iPad app
+    runs-on: macos-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apple and Rust build tools
+        run: |
+          rustup update stable --no-self-update
+          brew install xcodegen
+      - name: Build device and simulator applications and run tests
+        run: sh scripts/build-ios.sh --test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MultiSync-iOS-unsigned-and-simulator
+          path: |
+            dist/ios/
+            Cargo.lock
+          if-no-files-found: error
+
+  windows_app:
+    name: Windows native application
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Select stable Rust
+        run: rustup update stable --no-self-update
+      - name: Model checks, Rust bridge and native application
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MultiSync-Windows-x64
+          path: |
+            dist/MultiSync-Windows-x64.zip
+            Cargo.lock
+          if-no-files-found: error

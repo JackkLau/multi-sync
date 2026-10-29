@@ -10,12 +10,15 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
@@ -80,6 +83,20 @@ class TransferModel(application: Application) : AndroidViewModel(application), D
         val result = JSONObject(NativeBridge.call(request.toString()))
         check(result.optBoolean("ok")) { result.optString("error", "传输引擎未完成操作") }
         result
+    }
+
+    // A cancelled ViewModel must still stop native tasks before dropping their handles.
+    private suspend fun stopAndRelease(handle: String) = withContext(NonCancellable) {
+        try {
+            runCatching { call("op" to "stop", "handle" to handle) }
+            withTimeoutOrNull(5000) {
+                while (!call("op" to "poll", "handle" to handle).optBoolean("finished")) delay(50)
+            }
+        } catch (_: Exception) {
+            // release also signals stop, including when polling cannot complete.
+        } finally {
+            runCatching { call("op" to "release", "handle" to handle) }
+        }
     }
 
     fun useInvitation(value: String) {
@@ -173,11 +190,15 @@ class TransferModel(application: Application) : AndroidViewModel(application), D
                 persist()
                 val params = mutableListOf("op" to "send", "journal" to journal.absolutePath)
                 if (!journal.exists()) { params += "source" to record.path; params += "ticket" to ticket }
-                handle = call(*params.toTypedArray()).getString("handle")
-                senderHandle = handle
-                if (attempt != generation || !foreground || senderStopRequested) { call("op" to "stop", "handle" to handle) }
+                withContext(NonCancellable) {
+                    // Ownership is recorded before cancellation can discard a newly created handle.
+                    handle = call(*params.toTypedArray()).getString("handle")
+                    senderHandle = handle
+                }
+                val activeHandle = checkNotNull(handle)
+                if (attempt != generation || !foreground || senderStopRequested) { call("op" to "stop", "handle" to activeHandle) }
                 while (true) {
-                    val result = call("op" to "poll", "handle" to handle)
+                    val result = call("op" to "poll", "handle" to activeHandle)
                     val events = result.getJSONArray("events")
                     for (index in 0 until events.length()) {
                         val event = events.getJSONObject(index)
@@ -192,13 +213,18 @@ class TransferModel(application: Application) : AndroidViewModel(application), D
                 }
                 if (state.value.outgoing.first { it.id == id }.phase !in listOf("completed", "failed", "paused")) update(id) { it.copy(phase = "paused") }
                 persist()
+            } catch (e: CancellationException) {
+                update(id) { if (it.phase == "completed") it else it.copy(phase = "paused", message = "") }
+                throw e
             } catch (e: Exception) {
                 update(id) { it.copy(phase = "failed", message = e.message ?: "连接中断，可继续") }
-                runCatching { persist() }.onFailure { mutable.value = state.value.copy(storageHealthy = false) }
             } finally {
-                handle?.let { runCatching { call("op" to "release", "handle" to it) } }
-                senderHandle = null
-                mutable.value = state.value.copy(activeSend = null)
+                withContext(NonCancellable) {
+                    handle?.let { stopAndRelease(it) }
+                    senderHandle = null
+                    mutable.value = state.value.copy(activeSend = null)
+                    runCatching { persist() }.onFailure { mutable.value = state.value.copy(storageHealthy = false) }
+                }
             }
         }
     }
@@ -219,11 +245,14 @@ class TransferModel(application: Application) : AndroidViewModel(application), D
         receiverPoll = viewModelScope.launch {
             var handle: String? = null
             try {
-                handle = call("op" to "start_receive", "inbox" to inbox.absolutePath, "host" to host, "port" to 53318).getString("handle")
-                receiverHandle = handle
-                if (attempt != generation || !foreground || receiverStopRequested) call("op" to "stop", "handle" to handle)
+                withContext(NonCancellable) {
+                    handle = call("op" to "start_receive", "inbox" to inbox.absolutePath, "host" to host, "port" to 53318).getString("handle")
+                    receiverHandle = handle
+                }
+                val activeHandle = checkNotNull(handle)
+                if (attempt != generation || !foreground || receiverStopRequested) call("op" to "stop", "handle" to activeHandle)
                 while (true) {
-                    val result = call("op" to "poll", "handle" to handle)
+                    val result = call("op" to "poll", "handle" to activeHandle)
                     val events = result.getJSONArray("events")
                     for (index in 0 until events.length()) {
                         val event = events.getJSONObject(index)
@@ -237,11 +266,14 @@ class TransferModel(application: Application) : AndroidViewModel(application), D
                     if (result.optBoolean("finished")) break
                     delay(500)
                 }
-            } catch (e: Exception) { notice(e.message ?: "接收服务未能启动") }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { notice(e.message ?: "接收服务未能启动") }
             finally {
-                handle?.let { runCatching { call("op" to "release", "handle" to it) } }
-                receiverHandle = null
-                mutable.value = state.value.copy(receiveStarting = false, receiveRunning = false, receiveTicket = "")
+                withContext(NonCancellable) {
+                    handle?.let { stopAndRelease(it) }
+                    receiverHandle = null
+                    mutable.value = state.value.copy(receiveStarting = false, receiveRunning = false, receiveTicket = "")
+                }
             }
         }
     }
@@ -279,8 +311,15 @@ class TransferModel(application: Application) : AndroidViewModel(application), D
     } }
     override fun onCleared() {
         ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
+        foreground = false
+        generation++
+        receiverStopRequested = true
+        senderStopRequested = true
+        receiverPoll?.cancel()
+        senderPoll?.cancel()
         listOfNotNull(receiverHandle, senderHandle).forEach { handle ->
-            runCatching { NativeBridge.call(JSONObject().put("op", "release").put("handle", handle).toString()) }
+            // Each task's non-cancellable finalizer drains and releases its own handle.
+            runCatching { NativeBridge.call(JSONObject().put("op", "stop").put("handle", handle).toString()) }
         }
         super.onCleared()
     }

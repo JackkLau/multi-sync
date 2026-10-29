@@ -23,6 +23,7 @@ public sealed class MainWindow : Window
     private readonly HistoryStore _history;
     private readonly List<SendRecord> _outgoing;
     private readonly Dictionary<string, (TextBlock Text, ProgressBar Bar, Button Action)> _rows = [];
+    private readonly HashSet<Button> _busyButtons = [];
     private readonly InfoBar _notice = new() { IsClosable = true, IsOpen = false };
     private readonly PasswordBox _ticket = new() { Header = "对方的接收码（扫码自动填入）", PlaceholderText = "扫码连接，或点击从剪贴板粘贴", PasswordRevealMode = PasswordRevealMode.Peek };
     private readonly TextBlock _destination = Text("尚未连接接收设备");
@@ -44,7 +45,7 @@ public sealed class MainWindow : Window
     private string? _receiver;
     private string _receivingTicket = "";
     private byte[]? _qrPng;
-    private bool _polling, _closing, _queueWritable = true;
+    private bool _polling, _closing, _bindingBatch, _queueWritable = true;
     private string _incomingSnapshot = "";
     private SendRecord? _active;
 
@@ -132,7 +133,7 @@ public sealed class MainWindow : Window
 
     private static TextBlock Text(string value, double size = 15, bool bold = false) => new() {
         Text = value, FontSize = size, TextWrapping = TextWrapping.Wrap, Foreground = Ink,
-        FontWeight = bold ? global::Windows.UI.Text.FontWeights.SemiBold : global::Windows.UI.Text.FontWeights.Normal
+        FontWeight = bold ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal
     };
     private static StackPanel Column() => new() { Spacing = 16, Margin = new Thickness(4, 14, 4, 24), MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Stretch };
     private static StackPanel Row(params UIElement[] items)
@@ -146,10 +147,11 @@ public sealed class MainWindow : Window
         var button = new Button { Content = text, MinHeight = 36 };
         if (primary) { button.Background = Accent; button.Foreground = new SolidColorBrush(Colors.White); }
         button.Click += async (_, _) => {
-            button.IsEnabled = false;
+            if (!_busyButtons.Add(button)) return;
+            button.IsEnabled = false; UpdateControls();
             try { await action(); }
             catch (Exception error) { Notify(error.Message, true); }
-            finally { button.IsEnabled = true; UpdateControls(); }
+            finally { _busyButtons.Remove(button); button.IsEnabled = true; UpdateControls(); }
         };
         return button;
     }
@@ -157,7 +159,7 @@ public sealed class MainWindow : Window
     private IntPtr WindowHandle => WinRT.Interop.WindowNative.GetWindowHandle(this);
     private void RefreshAddresses()
     {
-        if (_receiver is not null) return;
+        if (_receiver is not null || _busyButtons.Contains(_receiverButton)) return;
         var previous = _addresses.SelectedItem as string;
         var values = NetworkInterface.GetAllNetworkInterfaces().Where(i => i.OperationalStatus == OperationalStatus.Up)
             .SelectMany(i => i.GetIPProperties().UnicastAddresses).Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork)
@@ -170,11 +172,12 @@ public sealed class MainWindow : Window
     {
         _copyButton.IsEnabled = _shareButton.IsEnabled = _saveQrButton.IsEnabled = _receivingTicket.Length > 0;
         _qr.Visibility = _qrPng is null ? Visibility.Collapsed : Visibility.Visible;
-        _folderButton.IsEnabled = _addresses.IsEnabled = _receiver is null;
+        _folderButton.IsEnabled = _addresses.IsEnabled = _receiver is null && !_busyButtons.Contains(_receiverButton);
         _receiverButton.Content = _receiver is null ? "开启接收" : "停止接收";
-        _receiverButton.IsEnabled = _receiver is not null || _addresses.SelectedItem is string;
+        _receiverButton.IsEnabled = !_busyButtons.Contains(_folderButton) && (_receiver is not null || _addresses.SelectedItem is string);
         _pickButton.IsEnabled = _queueWritable;
-        _sendButton.IsEnabled = _queueWritable && _active is null && _outgoing.Any(r => r.Phase == "queued");
+        _sendButton.IsEnabled = _queueWritable && !_bindingBatch && _active is null && _outgoing.Any(r => r.Phase == "queued");
+        foreach (var button in _busyButtons) button.IsEnabled = false;
     }
     private async Task PickInboxAsync()
     {
@@ -273,22 +276,28 @@ public sealed class MainWindow : Window
     }
     private async Task SendQueuedAsync()
     {
-        if (_active is not null || !_queueWritable) return;
-        foreach (var item in _outgoing.Where(r => r.Phase == "queued" && r.PendingTicket is null))
-            item.PendingTicket = _ticket.Password.Trim();
+        if (_active is not null || !_queueWritable || _bindingBatch) return;
+        _bindingBatch = true; UpdateControls();
+        try {
+            await SendQueue.BindInvitationAsync(_outgoing, _ticket.Password,
+                async invitation => { await Bridge.CallAsync(new { op = "validate_ticket", ticket = invitation }); });
+        }
+        finally { _bindingBatch = false; UpdateControls(); }
         var next = _outgoing.FirstOrDefault(r => r.Phase == "queued");
         if (next is not null) await StartSendAsync(next);
     }
     private async Task StartSendAsync(SendRecord record)
     {
-        if (_active is not null || !_queueWritable) return;
+        if (_active is not null || !_queueWritable || _bindingBatch) return;
         _active = record; record.Error = null; record.Phase = "hashing"; UpdateRow(record); UpdateControls();
         try {
             JsonElement result;
             if (File.Exists(record.Journal)) result = await Bridge.CallAsync(new { op = "send", journal = record.Journal });
             else {
-                var invitation = record.PendingTicket ?? _ticket.Password.Trim();
-                await Bridge.CallAsync(new { op = "validate_ticket", ticket = invitation });
+                var invitation = string.IsNullOrWhiteSpace(record.PendingTicket) ? _ticket.Password.Trim() : record.PendingTicket;
+                try { await Bridge.CallAsync(new { op = "validate_ticket", ticket = invitation }); }
+                catch { record.PendingTicket = null; throw; }
+                record.PendingTicket = invitation;
                 result = await Bridge.CallAsync(new { op = "send", source = record.Source, journal = record.Journal, ticket = invitation });
             }
             record.Handle = result.GetProperty("handle").GetString();
@@ -322,7 +331,8 @@ public sealed class MainWindow : Window
         row.Bar.Value = record.Percent; row.Bar.IsIndeterminate = record.Phase is "hashing" or "verifying";
         row.Action.Content = record.Handle is not null ? "暂停" : record.Phase == "failed" ? "重试" : "继续";
         row.Action.Visibility = record.Phase == "completed" ? Visibility.Collapsed : Visibility.Visible;
-        row.Action.IsEnabled = _queueWritable && (record.Handle is not null || _active is null);
+        row.Action.IsEnabled = _queueWritable && !_bindingBatch && !_busyButtons.Contains(row.Action)
+            && (record.Handle is not null || _active is null);
     }
     private async Task PollAsync()
     {

@@ -59,6 +59,20 @@ public sealed class HistoryStore(string path)
     }
 }
 
+public static class SendQueue
+{
+    public static async Task BindInvitationAsync(IEnumerable<SendRecord> records, string invitation, Func<string, Task> validate)
+    {
+        // Existing journals own their destination. New tasks share a validated batch snapshot.
+        var unbound = records.Where(r => r.Phase == "queued" && string.IsNullOrWhiteSpace(r.PendingTicket)
+            && !File.Exists(r.Journal)).ToArray();
+        if (unbound.Length == 0) return;
+        var ticket = invitation.Trim();
+        await validate(ticket);
+        foreach (var record in unbound) record.PendingTicket = ticket;
+    }
+}
+
 public static class AddressRules
 {
     public static bool IsLocal(string text)

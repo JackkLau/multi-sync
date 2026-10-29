@@ -1,58 +1,61 @@
 # 验证记录
 
-日期：2026-10-29（Asia/Hong_Kong）。当前范围为 Rust 传输引擎、macOS 原生客户端、接收二维码与扫码识别，不代表六类设备全部验收。
+日期：2026-10-29（Asia/Hong_Kong）。范围为四类操作系统的原生局域网文件收发客户端、共享引擎和二维码连接。构建/回环测试与物理设备验收分别记录。
 
-代码与后续构建结果：[PR #1](https://github.com/JackkLau/multi-sync/pull/1)。每次代码更新均重新执行 Linux、Windows 和 macOS 构建；以 PR 对应提交的检查结果为准。
+功能提交：[PR #2](https://github.com/JackkLau/multi-sync/pull/2)。当前移动端/Windows 完整构建正在运行，最终以该 PR 最新提交的检查为准，不能用旧提交的绿灯替代新提交结果。
 
-## 首次跨平台构建证据
+## 需求与证据
 
-来源：[Actions run 40798013044](https://github.com/JackkLau/multi-sync/actions/runs/40798013044)，源提交 `29694e6d17d8a951753145c843f9a893200dbe00`。下表记录该次运行，不用旧结果替代后续提交的检查。
+| 需求或风险 | 可观察行为 | 验证路径 | 当前证据 |
+| --- | --- | --- | --- |
+| 本机接收码不依赖粘贴 | 开启接收 → 引擎 ready → 本机 QR；复制/原生分享 | 四端 UI 与 ready 事件调用链检查 | 实现已核对；物理设备待验收 |
+| 扫描可直接识别目标 | 相机/图片读取完整 msync1 邀请，验证后仅选择目标 | Swift QR 回读、Android 契约、原生图片选择器 | macOS 回读与原生图片导入通过；其余平台运行见下表 |
+| 不自动接收陌生请求 | 新任务 pending，确认前不能上传字节 | Python HTTPS、C ABI、移动端仪器测试 | 桌面共享引擎通过 |
+| 中断与重启不丢任务 | 保存 journal/SQLite；暂停后从已确认位置恢复 | bridge_e2e.py、lan_e2e.py | 三类桌面 runner 的 C ABI 通过 |
+| 内容与原件保留 | 原文件不删除，内容一致，同名不覆盖，恢复不重复 | 真实 TLS 传输后的字节比较 | 桌面共享引擎通过 |
+| Android 可用构建 | APK 包含两种 ABI；模拟器真实 JNI TLS 收发 | GitHub Android 构建与 BridgeSmokeTest | 正在运行 |
+| iPhone/iPad 可用构建 | 真机/模拟器链接真实 Rust 库，模拟器执行 HTTPS 测试 | scripts/build-ios.sh --test | 正在运行 |
+| Windows 完整应用 | 自包含 WinUI exe + Rust DLL，队列模型测试 | scripts/build-windows.ps1 | 正在运行 |
+| 移动端后台边界 | 后台暂停，手动恢复，停机完成前不可重开 | 生命周期与停止状态源码检查 | 已检查；锁屏/强退/物理设备待验收 |
 
-| 验收项 | 直接证据 | 结果 |
-| --- | --- | --- |
-| Rust 核心与 CLI | Linux、macOS `cargo +stable test --workspace --release` | 各 9 个测试通过 |
-| Windows Rust 核心与 CLI | 同一命令 | 8 个测试通过；Unix 符号链接测试不适用 |
-| Windows / Linux Release CLI | `cargo +stable build --release -p multi-sync` | 构建成功、产物已上传 |
-| macOS Swift 测试 | `sh scripts/swift.sh test` | 11 个 XCTest 通过，其中 4 个二维码用例 |
-| 完整 macOS 应用编译 | `sh scripts/build-macos.sh` | SwiftUI 与 Rust 引擎均构建并打入 app |
-| Linux 真实 HTTPS 集成 | `python3 tests/lan_e2e.py` | 3 个用例通过：重启续传、确认/鉴权/证书/路径限制、真实发送器与幂等 |
-| macOS 真实 HTTPS 集成 | 同上 | 前 2 个通过；发送器事件读取超时，原因与修复见下文 |
+## 已完成的共享引擎与 macOS 验证
 
-macOS 首次运行在集成测试处停止，未执行后续签名检查、ZIP 打包和产物上传。修复提交仍保留这些步骤，不能仅以编译成功认定整条构建通过。
+来源：[Actions run 40902629361](https://github.com/JackkLau/multi-sync/actions/runs/40902629361)，提交 `27f52a550225f9f09900a1935f6c5277ed2343e0`。这是平台客户端接入前的桥接基线。
 
-## 已定位并修复的问题
+- Linux、Windows、macOS 的 Rust 工作区测试及 Release CLI 构建通过。
+- 三个平台均加载真实共享库执行 C ABI HTTPS 集成测试，覆盖显式接受、暂停/停止/恢复、2 MiB 文件内容、保留源文件、同名文件保护、完成后的幂等恢复和无效请求。
+- Linux、macOS 的真实 CLI HTTPS 集成测试通过，覆盖鉴权、证书、路径限制和重启恢复。
+- macOS Swift 测试（含完整邀请二维码回读）、完整应用构建、签名检查、ZIP 打包及上传通过。
 
-集成测试原先先对 stdout 调用 `select()`，再用 Python TextIO `readline()`。一次底层读取可能预取多条 JSON 行；第二条已经在 TextIO 缓冲中，但操作系统管道没有新字节，导致误报超时。
+## 本地检查
 
-已在本地确定性复现：子进程一次写入两条事件后等待输入，旧读取器在第二条超时；随后直接 `readline()` 能读到第二条。修复为独立线程逐行读取并放入队列，消费者在队列上等待。没有延长超时，也没有跳过真实发送测试。
+环境：Apple Silicon macOS、Xcode 16.2 / iOS SDK 18.2。终端网络受限，本地没有 Rust/Cargo、dotnet 或所需 Gradle 发行包，因此完整跨平台编译交由 GitHub Actions。
 
-回归命令 `python3 -m unittest discover -s tests -p 'test_*.py'` 本地通过，覆盖连续事件、真正无事件时的超时、EOF 和读取线程收尾；该命令也已加入三个 CI 平台和 `scripts/verify.sh`。修复后的完整网络测试结果见 PR 最新检查。
+| 检查 | 结果与范围 |
+| --- | --- |
+| macOS sh scripts/swift.sh build | 成功，包含直接复制/分享二维码界面；未打包 Rust 引擎 |
+| iOS App 与 XCTest 全源码 typecheck | 使用真实 iOS SDK 通过；不能替代链接和模拟器运行 |
+| Android Kotlin/Compose typecheck | 通过；JourneyApps 扫码依赖使用临时 API 声明，不能代替 Gradle 编译；临时声明未提交 |
+| Windows 项目/XAML/manifest XML | 格式检查通过；没有本地 C# 编译证据 |
+| plist、Shell、YAML | 结构/语法检查通过 |
+| Gradle Wrapper | 官方 v8.11.1 JAR，blob a4b76b9530d66f5e68d973ea569d8e19de379189；ZIP 完整性通过，许可证与来源随源码保存 |
+| 事件读取回归 | python3 -m unittest discover -s tests -p 'test_*.py' 通过 |
+| UI 合约严格审计 | audit_project.py --mode strict，0 findings；不是可访问性认证 |
 
-第二次构建 `40798623496` 表明上述测试缺陷并非 macOS 超时的唯一原因：队列读取已通过，但真实发送仍超时。进一步核对 axum-server 0.8.0 的 `src/server.rs`，确认它直接调用 Tokio `TcpListener::from_std`，不会自动设置非阻塞模式；我们的监听器仍是标准库默认的阻塞模式，会卡住 accept 循环，影响持久连接和停机。修复为移交 Tokio 前显式 `set_nonblocking(true)`，并增加“接收器空闲时无需新连接即可退出”的真实进程回归测试。网络测试超时时只记录事件类型，便于定位阶段，不输出邀请或密钥。
+先前 macOS 原生窗口检查已完成：图片选择器导入 QR 后自动识别、没有自动发送；扫码窗口初始不启用相机；缺少引擎时禁用收发。物理摄像头对屏扫码尚未验收。
 
-## 本地原生应用验证
+## 修复记录
 
-环境：Apple Silicon macOS，Xcode Swift 6.0.3。`sh scripts/build-macos.sh --ui-only` 成功；原生窗口实际启动。
+- 早期 Python TextIO 预读与 select 混用导致事件已在用户缓冲中却误报超时；改为线程读取队列，并保留确定性回归测试。
+- axum-server 接收标准监听器前需要 set_nonblocking(true)；补上非阻塞设置及空闲停机测试，解决 macOS 接收循环阻塞。
+- iOS 停机改为 stop → poll finished → release，停机期间禁止立即重启/续传，避免端口与任务重入。
 
-| 用户行为或风险 | 证据 | 结果 |
-| --- | --- | --- |
-| 完整邀请编码与回读 | CI 将包含约 400 字节证书和密钥的邀请生成 QR，再识别并逐字比较 | 通过 |
-| 无效/公网邀请、多接收码 | XCTest 负例 | 拒绝无效和公网邀请；不同邀请不静默选取 |
-| 二维码图片导入 | 在实际 app 的原生文件选择器中导入生成的 PNG | 自动填入邀请，并显示成功提示；没有自动发送 |
-| 摄像头启动边界 | 打开扫码 Sheet 并检查实际控件 | 摄像头保持未开启，提供“开启摄像头”和“取消”；取消返回发送页 |
-| 缺少引擎时的行为 | 本地 ui-only app | 明确提示，收发禁用，无模拟成功 |
-| UI 合约 | `audit_project.py <project> --mode strict` | 0 findings；不是完整可访问性认证 |
-| 应用配置 | `plutil -lint apps/macos/Info.plist` | 通过，包含摄像头用途说明 |
+## 尚未覆盖的发布条件
 
-本地受限终端运行二维码回读测试仍失败：Vision 无法创建像素缓冲，Core Image 无法检出特征。同一 PNG 在实际 GUI 中成功识别，同一源码在 GitHub macOS runner 的 11 个 XCTest 全部通过。因此本地终端结果保留为环境限制，不把它改成跳过或宽松断言。
-
-## 仍需验证的边界
-
-- 尚未进行物理摄像头对屏扫码、摄像头拒绝/撤销权限、无摄像头真机的完整流程测试。当前只有识别器与窗口生命周期的证据。
-- 网络集成测试是同一 runner 的真实 HTTPS 回环传输，不是两台设备的 Wi-Fi、防火墙或热点测试；Windows 当前只运行 Rust/事件读取测试和 CLI 构建。
-- 未验证 GB 级文件、上万小文件、锁屏/休眠、断电、磁盘满、耗电及吞吐；不能承诺所有后台场景无感恢复。
-- 应用仅 ad-hoc 签名，没有 Apple 开发者签名、公证或商店发布。
-- CI 生成的 Cargo.lock 随产物保存；本地终端 DNS 受限，无法取回产物以固定仓库依赖。后续发布应先将已验证的锁文件纳入源码。
-- 本地无 Rust/Cargo，Rust 编译证据来自 CI；本地 `.git` 写入被环境拒绝，代码通过已连接 GitHub API 提交。本地工作区文件仍保留，Git 元数据未同步。
-- 官方 DESIGN.md lint 因 npm 离线缓存缺失未运行；VoiceOver 和最小窗口尺寸仍需完整审计。
-- Android、iOS/iPadOS、Windows 原生 UI、mDNS、设备撤销、移动端后台和系统安全存储尚未实现。
+- 四类真实设备间 Wi-Fi、热点、访客网络、系统防火墙、相机权限拒绝/撤销，以及手机锁屏/强制退出/省电策略，仍需验收。
+- CI 的网络测试为真实 HTTPS 回环，不是两台物理设备间传输；模拟器成功不能替代相机与无线网络测试。
+- 未验证 GB 级文件、上万小文件、断电、磁盘满、耗电、吞吐与长期运行；不能作后台无感同步承诺。
+- iOS 产物未签名，真机安装需要自己的 Apple 签名；macOS 仅 ad-hoc 签名，Windows 尚无代码签名，Android 为 debug 签名。未发布商店版本。
+- 密钥保存在应用状态目录，尚未接入 Keychain/Android Keystore/Windows DPAPI；设备撤销和恢复尚未实现。
+- Cargo.lock 当前随 CI 产物保存，仓库尚未锁定 Rust 依赖；发布前需要纳入已验证锁文件。
+- mDNS、目录同步、离线云端投递和其他 App 私有数据同步不在本轮范围。

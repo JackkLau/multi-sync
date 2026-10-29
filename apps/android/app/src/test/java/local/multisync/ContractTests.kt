@@ -30,8 +30,22 @@ class ContractTests {
         assertEquals(".._outside", SafeNames.file("../outside"))
         assertEquals("file_CON.txt", SafeNames.file("CON.txt"))
         assertEquals("file_.multisync", SafeNames.file(".multisync"))
+        assertEquals("file_.MuLtIsYnC", SafeNames.file(".MuLtIsYnC"))
+        assertEquals("file_CON .txt", SafeNames.file("CON .txt"))
         assertEquals("照片.jpg", SafeNames.file("照片.jpg"))
         assertFalse(SafeNames.file("a\nb").contains('\n'))
-        assertTrue(SafeNames.file("照片".repeat(200)).toByteArray().size <= 220)
+        assertTrue(SafeNames.file("照片".repeat(200)).toByteArray(Charsets.UTF_8).size <= 180)
+    }
+    @Test fun stagedNamesRespectCoreUtf8BoundaryAndPreserveExtension() {
+        val boundary = "a".repeat(176) + ".pdf"
+        assertEquals(boundary, SafeNames.file(boundary))
+        assertEquals(boundary, SafeNames.file("a".repeat(177) + ".pdf"))
+        val chinese = SafeNames.file("照片".repeat(100) + ".jpg")
+        assertEquals("照片".repeat(29) + ".jpg", chinese)
+        assertTrue(chinese.toByteArray(Charsets.UTF_8).size <= 180)
+        val emoji = SafeNames.file("📷".repeat(100) + ".png")
+        assertEquals("📷".repeat(44) + ".png", emoji)
+        assertEquals(180, emoji.toByteArray(Charsets.UTF_8).size)
+        assertFalse(emoji.contains('\uFFFD'))
     }
 }

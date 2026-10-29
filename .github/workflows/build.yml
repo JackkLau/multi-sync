@@ -26,6 +26,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Select stable Rust
         run: rustup update stable --no-self-update
+      - name: Event reader regression test
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Core and CLI tests
         run: cargo +stable test --workspace --release
       - name: Build CLI
@@ -52,6 +54,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Select stable Rust
         run: rustup update stable --no-self-update
+      - name: Event reader regression test
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Rust tests
         run: cargo +stable test --workspace --release
       - name: Swift tests including QR round-trip
